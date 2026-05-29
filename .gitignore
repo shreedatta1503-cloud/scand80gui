@@ -1,0 +1,17 @@
+# --- Secrets / credentials (NEVER commit) ---
+.git-credentials
+.gitconfig
+.claude.json
+.claude/
+.bash_history
+
+# --- Large installer (exceeds GitHub 100MB limit) ---
+QGroundControl-installer.exe
+
+# --- Nested git repo (has its own remote) ---
+qgroundcontrol/
+
+# --- System / cache dirs ---
+.cache/
+.local/
+.bashrc
