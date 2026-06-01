@@ -50,6 +50,27 @@ output PWM, not a true external limit-switch input. The widget's `pinFeedbackSer
 (and `rcTriggerChannel`/`rcTriggerThresholdUs`) properties make the source/threshold easy to change if a
 real switch is later wired to an RC input instead.
 
+## Message-panel noise filter (suppress ArduPilot SBUS debug spam)
+
+ArduPilot emits a `MAV_SEVERITY_DEBUG` STATUSTEXT — `RCInput: decoding SBUS(n)` — every time it
+(re)locks onto the SBUS RC protocol. It only confirms which RC protocol was decoded, carries no
+actionable info, yet repeats constantly and floods the in-app **Messages** panel (shown there with
+the `Debug:` severity label). It is unrelated to whether RC Ch9 / the Payload Drop widget works.
+
+**Fix (commit `737e84ac6`, branch `scand80-dev`):** drop it in `Vehicle::_textMessageReceived`
+(`src/Vehicle/Vehicle.cc`), alongside QGC's existing filters for PX4 event/preflight noise, so it
+never reaches the panel or the speech engine:
+
+```cpp
+if ((severity == MAV_SEVERITY::MAV_SEVERITY_DEBUG) && text.startsWith(QStringLiteral("RCInput: decoding SBUS"))) {
+    qCDebug(VehicleLog) << "Dropping noisy ArduPilot SBUS decode message:" << text;
+    return;
+}
+```
+
+Deliberately narrow — guarded on **DEBUG severity + exact text prefix** — so no genuinely useful
+RC/status message is ever hidden. Related explanatory note lives in `Vehicle::_handleRCChannels()`.
+
 ## Building & running (Linux dev box — headless)
 
 The dev environment is a **headless Linux server** (no GPU).
@@ -80,6 +101,31 @@ Three options, in order of convenience:
    `cmake --build build`.
 
 Toolchain pins (from `build-config.json`): Qt **6.10.3** (min 6.10.0), CMake **3.25+**, MSVC 2022 on Windows.
+
+### ⏸️ In progress — resume the installer download (paused 2026-06-01)
+
+The SBUS-noise fix (commit `737e84ac6`) is pushed to `scand80-dev` and the Windows build **succeeded**.
+The installer artifact is built and sitting on GitHub; only the local download + `.exe` swap remains.
+The download was started, then terminated by request at ~24 MB / 242.8 MB.
+
+**To finish (do this 2026-06-02):**
+- **Run:** `26757993797` (conclusion: success) —
+  https://github.com/shreedatta1503-cloud/scand80gui/actions/runs/26757993797
+- **Artifact:** `QGroundControl-Windows-Release`, id `7333556224`, 242.8 MB.
+  ⚠️ **14-day retention — expires ~2026-06-15.** After that, re-dispatch `build-windows-exe.yml`
+  on `scand80-dev` to regenerate it.
+- **Download (token lives in `~/.git-credentials`):**
+  ```bash
+  TOKEN=$(sed -n 's#https://\([^:]*\):\([^@]*\)@github.com#\2#p' ~/.git-credentials | head -1)
+  curl -sL -H "Authorization: Bearer $TOKEN" \
+    "https://api.github.com/repos/shreedatta1503-cloud/scand80gui/actions/artifacts/7333556224/zip" \
+    -o /tmp/qgc-artifact.zip
+  ```
+  (Throughput was ~3 MB/min last time, so allow ~80 min — or download from the run URL by hand.)
+- **Then:** `unzip -l /tmp/qgc-artifact.zip` to find the NSIS installer `.exe` (name matches
+  `installer|QGroundControl-`; raw `QGroundControl.exe`/`QGroundControlApp.exe` are fallbacks), then
+  replace **`/root/QGroundControl-installer.exe`** (currently still the stale 2026-05-27, 169 MB file).
+- **Not yet committed:** this `CLAUDE.md` documentation update (the code fix itself is already pushed).
 
 ## Related repo
 
