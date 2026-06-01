@@ -3481,6 +3481,16 @@ void Vehicle::_textMessageReceived(MAV_COMPONENT componentid, MAV_SEVERITY sever
         return;
     }
 
+    // ArduPilot emits a DEBUG-severity "RCInput: decoding SBUS(n)" STATUSTEXT every time it (re)locks
+    // onto the SBUS RC protocol. It only confirms which RC protocol was decoded and carries no
+    // actionable information, yet it repeats constantly and floods the in-app Messages panel during
+    // normal flight. Drop it here so it never reaches the panel or the speech engine. (See the related
+    // note in _handleRCChannels(): this message is unrelated to whether RC Ch9 / the payload widget works.)
+    if ((severity == MAV_SEVERITY::MAV_SEVERITY_DEBUG) && text.startsWith(QStringLiteral("RCInput: decoding SBUS"))) {
+        qCDebug(VehicleLog) << "Dropping noisy ArduPilot SBUS decode message:" << text;
+        return;
+    }
+
     bool skipSpoken = false;
     const bool ardupilotPrearm = text.startsWith(QStringLiteral("PreArm"));
     const bool px4Prearm = text.startsWith(QStringLiteral("preflight"), Qt::CaseInsensitive) && (severity >= MAV_SEVERITY::MAV_SEVERITY_CRITICAL);
