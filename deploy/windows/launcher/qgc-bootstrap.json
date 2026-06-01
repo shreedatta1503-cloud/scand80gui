@@ -1,0 +1,53 @@
+{
+  "schemaVersion": 1,
+  "manifestVersion": "2026.06.01",
+  "appExecutable": "QGroundControlApp.exe",
+  "manifestUrl": "",
+  "mirrors": [
+    "https://github.com/shreedatta1503-cloud/scand80gui/releases/download/runtime-2026.06.01/"
+  ],
+  "components": [
+    {
+      "name": "vc-redist-x64",
+      "type": "vcredist",
+      "required": true,
+      "detect": { "rule": "file-exists", "path": "vcruntime140.dll" },
+      "sources": [ "https://aka.ms/vs/17/release/vc_redist.x64.exe" ],
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "sizeBytes": 0,
+      "install": { "action": "run-silent", "args": "/install /quiet /norestart", "elevate": true },
+      "verifyAuthenticode": true,
+      "publisher": "Microsoft Corporation"
+    },
+    {
+      "name": "qt-runtime-bundle",
+      "type": "qt-bundle",
+      "required": true,
+      "detect": { "rule": "file-exists", "path": "Qt6Core.dll" },
+      "sources": [ "qt-runtime-6.10.3-win64.zip" ],
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "sizeBytes": 0,
+      "install": { "action": "extract", "dest": "." }
+    },
+    {
+      "name": "qt-platform-plugin",
+      "type": "file",
+      "required": true,
+      "detect": { "rule": "file-exists", "path": "platforms\\qwindows.dll" },
+      "sources": [ "qwindows.dll" ],
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "sizeBytes": 0,
+      "install": { "action": "copy", "dest": "platforms\\qwindows.dll" }
+    },
+    {
+      "name": "qml-runtime-bundle",
+      "type": "qt-bundle",
+      "required": false,
+      "detect": { "rule": "file-exists", "path": "qml\\QtQuick\\qmldir" },
+      "sources": [ "qml-runtime-6.10.3-win64.zip" ],
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "sizeBytes": 0,
+      "install": { "action": "extract", "dest": "qml" }
+    }
+  ]
+}

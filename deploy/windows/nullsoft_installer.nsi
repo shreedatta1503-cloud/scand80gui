@@ -6,6 +6,14 @@
 
 RequestExecutionLevel admin
 
+; APPEXE is the Qt application executable basename. With the Windows bootstrap
+; launcher (QGC_WINDOWS_BOOTSTRAP), EXENAME is the launcher (QGroundControl.exe)
+; and APPEXE is the renamed Qt app (QGroundControlApp.exe). For default builds
+; the two are identical, so fall back to EXENAME.
+!ifndef APPEXE
+    !define APPEXE "${EXENAME}"
+!endif
+
 !macro DemoteShortCut target
     !insertmacro ComHlpr_CreateInProcInstance ${CLSID_ShellLink} ${IID_IShellLink} r0 ""
     ${If} $0 <> 0
@@ -79,7 +87,7 @@ cleanupOrphanedRegistry:
     DetailPrint "Previous uninstaller not found, cleaning up orphaned registry keys..."
     SetRegView 64
     DeleteRegKey HKLM "SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\${APPNAME}"
-    DeleteRegKey HKLM "SOFTWARE\Microsoft\Windows\Windows Error Reporting\LocalDumps\${EXENAME}.exe"
+    DeleteRegKey HKLM "SOFTWARE\Microsoft\Windows\Windows Error Reporting\LocalDumps\${APPEXE}.exe"
     Goto doInstall
 
 doUninstall:
@@ -97,8 +105,8 @@ doUninstall:
 doInstall:
     SetRegView 64
     SetOutPath $INSTDIR
-    ; Install payload
-    File /r /x ${EXENAME}.pdb /x ${EXENAME}.lib /x ${EXENAME}.exp ${DESTDIR}\*.*
+    ; Install payload (exclude build-only artifacts of the Qt app and launcher)
+    File /r /x ${APPEXE}.pdb /x ${APPEXE}.lib /x ${APPEXE}.exp /x ${EXENAME}.pdb ${DESTDIR}\*.*
 
     ; Create uninstaller and ARP data
     WriteUninstaller "$INSTDIR\${EXENAME}-Uninstall.exe"
@@ -116,9 +124,9 @@ doInstall:
     !endif
 
     ; WER dumps for crash triage
-    WriteRegDWORD    HKLM "SOFTWARE\Microsoft\Windows\Windows Error Reporting\LocalDumps\${EXENAME}.exe" "DumpCount" 5
-    WriteRegDWORD    HKLM "SOFTWARE\Microsoft\Windows\Windows Error Reporting\LocalDumps\${EXENAME}.exe" "DumpType" 1
-    WriteRegExpandStr HKLM "SOFTWARE\Microsoft\Windows\Windows Error Reporting\LocalDumps\${EXENAME}.exe" "DumpFolder" "%LOCALAPPDATA%\QGCCrashDumps"
+    WriteRegDWORD    HKLM "SOFTWARE\Microsoft\Windows\Windows Error Reporting\LocalDumps\${APPEXE}.exe" "DumpCount" 5
+    WriteRegDWORD    HKLM "SOFTWARE\Microsoft\Windows\Windows Error Reporting\LocalDumps\${APPEXE}.exe" "DumpType" 1
+    WriteRegExpandStr HKLM "SOFTWARE\Microsoft\Windows\Windows Error Reporting\LocalDumps\${APPEXE}.exe" "DumpFolder" "%LOCALAPPDATA%\QGCCrashDumps"
 
 done:
     SetRegView lastused
@@ -142,7 +150,7 @@ Section "Uninstall"
 
     ; Remove ARP + WER
     DeleteRegKey HKLM "SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\${APPNAME}"
-    DeleteRegKey HKLM "SOFTWARE\Microsoft\Windows\Windows Error Reporting\LocalDumps\${EXENAME}.exe"
+    DeleteRegKey HKLM "SOFTWARE\Microsoft\Windows\Windows Error Reporting\LocalDumps\${APPEXE}.exe"
 SectionEnd
 
 Section "Create Start Menu Shortcuts"

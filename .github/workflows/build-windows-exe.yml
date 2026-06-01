@@ -15,6 +15,10 @@ on:
         description: "Enable GStreamer video (slower, more failure surface)"
         type: boolean
         default: false
+      enable_bootstrap:
+        description: "Build the bootstrap launcher (QGroundControl.exe self-repairs runtime, app becomes QGroundControlApp.exe)"
+        type: boolean
+        default: true
 
 jobs:
   build-windows-exe:
@@ -43,7 +47,9 @@ jobs:
           build-type: ${{ inputs.build_type }}
           generator: Ninja
           use-qt-cmake: "true"
-          extra-args: -DQGC_ENABLE_GST_VIDEOSTREAMING=${{ inputs.enable_video && 'ON' || 'OFF' }}
+          extra-args: >-
+            -DQGC_ENABLE_GST_VIDEOSTREAMING=${{ inputs.enable_video && 'ON' || 'OFF' }}
+            -DQGC_WINDOWS_BOOTSTRAP=${{ inputs.enable_bootstrap && 'ON' || 'OFF' }}
 
       - name: Build
         uses: ./.github/actions/cmake-build
@@ -71,9 +77,13 @@ jobs:
           Get-ChildItem -Path build -Recurse -Filter *.exe |
             Where-Object { $_.Name -match 'installer|QGroundControl-' } |
             ForEach-Object { Copy-Item $_.FullName artifacts\ -Force }
-          # Raw built executable as a fallback
-          $exe = Join-Path "build\${{ inputs.build_type }}" "QGroundControl.exe"
-          if (Test-Path $exe) { Copy-Item $exe artifacts\ -Force }
+          # Raw built executables as a fallback. With the bootstrap launcher
+          # enabled, QGroundControl.exe is the launcher and QGroundControlApp.exe
+          # is the Qt application; collect whichever are present.
+          foreach ($name in @("QGroundControl.exe", "QGroundControlApp.exe")) {
+            $exe = Join-Path "build\${{ inputs.build_type }}" $name
+            if (Test-Path $exe) { Copy-Item $exe artifacts\ -Force }
+          }
           Write-Host "Collected:"; Get-ChildItem artifacts | Format-Table Name,Length
 
       - name: Upload artifact

@@ -54,6 +54,16 @@ set(_nsis_args
     "/DDESTDIR=${QGC_PAYLOAD_DIR}"
 )
 
+# When the bootstrap launcher is enabled, the user-facing EXENAME (the launcher,
+# QGroundControl.exe) differs from the Qt application (QGroundControlApp.exe).
+# APPEXE points the NSIS script at the Qt app for build-artifact excludes and
+# Windows Error Reporting crash-dump keys; EXENAME (the launcher) stays the
+# DisplayIcon and shortcut target. Default builds leave APPEXE undefined and the
+# NSIS script falls back to EXENAME.
+if(QGC_WINDOWS_BOOTSTRAP)
+    list(APPEND _nsis_args "/DAPPEXE=${CMAKE_PROJECT_NAME}App")
+endif()
+
 if(EXISTS "${QGC_INSTALLER_ICON}")
     list(APPEND _nsis_args "/DINSTALLER_ICON=${QGC_INSTALLER_ICON}")
 endif()
