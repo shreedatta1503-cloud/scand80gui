@@ -47,6 +47,20 @@ jobs:
           qt-arch: win64_msvc2022_64
           build-type: ${{ inputs.build_type }}
 
+      # The install step runs cmake/install/CreateWinInstaller.cmake, which
+      # find_program(makensis REQUIRED) and hard-fails the build if NSIS is
+      # absent. windows-latest no longer ships NSIS, so install it explicitly.
+      # Chocolatey drops makensis at C:\Program Files (x86)\NSIS\, which the
+      # cmake find_program PATHS already search.
+      - name: Install NSIS (makensis, for the Windows installer)
+        shell: pwsh
+        run: |
+          choco install nsis -y --no-progress
+          $nsis = "C:\Program Files (x86)\NSIS"
+          if (-not (Test-Path "$nsis\makensis.exe")) { throw "makensis not found after install" }
+          Add-Content -Path $env:GITHUB_PATH -Value $nsis
+          & "$nsis\makensis.exe" /VERSION
+
       - name: Configure
         uses: ./.github/actions/cmake-configure
         with:
