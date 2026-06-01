@@ -24,6 +24,14 @@ jobs:
   build-windows-exe:
     runs-on: windows-latest
     timeout-minutes: 120
+    env:
+      # ccache + MSVC precompiled headers interact badly on this runner: ccache
+      # restores a cache-hit .obj for each PCH translation unit without its
+      # side-output .pch, so every dependent source then fails with
+      # "fatal error C1010" and the build dies in ~20s. Disabling ccache (it
+      # becomes a transparent passthrough) makes each PCH build to disk normally.
+      # This fork build is manual/occasional, so losing compile caching is fine.
+      CCACHE_DISABLE: "1"
     steps:
       - name: Checkout
         uses: actions/checkout@v4
