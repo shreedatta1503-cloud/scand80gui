@@ -1379,6 +1379,18 @@ void Vehicle::_handleRCChannels(mavlink_message_t& message)
         clampedValues[channelIndex] = std::clamp(channelValues[channelIndex], 1000, 2000);
     }
 
+    // Trace Payload Drop trigger activity: RC Channel 9 is index 8 (0-based). Log only on a
+    // value change so the ~5-10 Hz RC_CHANNELS stream does not flood the log. This is the
+    // C++-side "RC9 value reception / change detection" instrumentation the Fly View widget
+    // (PayloadDropWidget.qml) reacts to via the rcChannelsRawChanged signal below.
+    if (channelValues.size() > 8) {
+        const int rc9 = channelValues.at(8);
+        if (rc9 != _lastRc9RawValue) {
+            qCDebug(VehicleLog) << "RC9 (payload trigger) value changed:" << _lastRc9RawValue << "->" << rc9 << "us";
+            _lastRc9RawValue = rc9;
+        }
+    }
+
     // rcRSSI is now a Fact on VehicleFactGroup (this); VehicleFactGroup owns the low-pass
     // filter and sentinel handling for the 0-100 / 255-unknown semantics.
     updateRCRSSI(channels.rssi);

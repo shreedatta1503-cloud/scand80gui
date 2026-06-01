@@ -24,6 +24,13 @@ import QGroundControl.Controls
 Rectangle {
     id:         root
     visible:    _widgetVisible
+
+    // Trace visibility transitions (widget shown/hidden) on the UI thread.
+    onVisibleChanged: console.log("[PayloadDrop] widget visibility ->", visible,
+                                  "(RC9 =", root._rc9Pwm, "us )")
+
+    Component.onCompleted: console.log("[PayloadDrop] widget created; waiting for RC Channel",
+                                       root.rcTriggerChannel, "activity")
     implicitWidth:  mainColumn.implicitWidth  + (_margin * 2)
     implicitHeight: mainColumn.implicitHeight + (_margin * 2)
     radius:     ScreenTools.defaultFontPixelHeight / 2
@@ -43,6 +50,7 @@ Rectangle {
     property bool _pinReleaseRequested: false       // Remove Pin confirmed, awaiting AUX10 feedback
     property bool _pinRemoved:          false       // AUX10 feedback received -> DROP enabled
     property bool _dropCompleted:       false       // DROP command sent successfully
+    property int  _rc9Pwm:              -1          // Last seen RC Ch9 PWM (us); -1 == none yet
 
     readonly property real _margin: ScreenTools.defaultFontPixelWidth
 
@@ -51,8 +59,10 @@ Rectangle {
     // Consume clicks so they don't fall through to the map/video underneath.
     DeadMouseArea { anchors.fill: parent }
 
-    // Reset to the initial (hidden) state.
+    // Reset to the initial (hidden) state. _rc9Pwm is intentionally preserved so the widget
+    // only re-appears on a genuine new RC9 change, not on the next identical RC packet.
     function resetState() {
+        console.log("[PayloadDrop] resetState -> hiding widget, clearing pin/drop state")
         _pinReleaseRequested = false
         _pinRemoved          = false
         _dropCompleted       = false
@@ -67,11 +77,33 @@ Rectangle {
         function onRcChannelsRawChanged(channelValues) {
             var index = root.rcTriggerChannel - 1
             if (index < 0 || index >= channelValues.length) {
+                // RC9 absent from this RC stream (fewer/non-contiguous channels).
                 return
             }
             var pwm = channelValues[index]
             // -1 means the channel is not present in the RC stream.
-            if (pwm >= 0 && pwm > root.rcTriggerThresholdUs && !root._dropCompleted) {
+            if (pwm < 0) {
+                return
+            }
+
+            // ---- Change detection ----
+            // Trigger on ANY change in the RC9 PWM value (not on an absolute level/threshold),
+            // including the very first reading after startup (previous value == -1). This is
+            // why the widget now appears on RC9 activity even when the value never crosses
+            // 1500us. Logging is throttled to changes so the ~5-10 Hz RC stream does not flood.
+            if (pwm === root._rc9Pwm) {
+                return
+            }
+            console.log("[PayloadDrop] RC9 received:", pwm, "us (was", root._rc9Pwm,
+                        ") -> change detected")
+            root._rc9Pwm = pwm
+
+            // Any RC9 change reveals the widget, unless a drop just completed and is awaiting
+            // its acknowledgement dialog. This handler runs on the UI thread (Qt queues the
+            // rcChannelsRawChanged signal from the MAVLink receive path to the GUI thread),
+            // so mutating visual state directly here is thread-safe.
+            if (!root._dropCompleted && !root._widgetVisible) {
+                console.log("[PayloadDrop] RC9 activity -> revealing widget on main screen")
                 root._widgetVisible = true
             }
         }
@@ -87,6 +119,8 @@ Rectangle {
             }
             var pwm = servoValues[index]
             if (pwm >= 0 && pwm >= root.pinFeedbackThresholdUs) {
+                console.log("[PayloadDrop] AUX OUT", root.pinFeedbackServo, "feedback", pwm,
+                            "us -> pin removed, enabling DROP")
                 root._pinRemoved = true
                 pinRemovedDialog.open()
             }
@@ -102,6 +136,18 @@ Rectangle {
             Layout.alignment:       Qt.AlignHCenter
             text:                   qsTr("Payload Drop")
             font.bold:              true
+        }
+
+        // ---- Live RC Channel 9 readout: updated in real time on every RC9 change ----
+        QGCLabel {
+            Layout.alignment:       Qt.AlignHCenter
+            font.pointSize:         ScreenTools.smallFontPointSize
+            text:                   root._rc9Pwm < 0
+                                        ? qsTr("RC%1: --").arg(root.rcTriggerChannel)
+                                        : qsTr("RC%1: %2 µs (%3)")
+                                            .arg(root.rcTriggerChannel)
+                                            .arg(root._rc9Pwm)
+                                            .arg(root._rc9Pwm > root.rcTriggerThresholdUs ? qsTr("high") : qsTr("low"))
         }
 
         // ---- Remove Pin button: rectangular, saffron, thin red border ----
@@ -156,6 +202,7 @@ Rectangle {
                 anchors.fill:   parent
                 enabled:        dropButton._dropEnabled
                 onClicked: {
+                    console.log("[PayloadDrop] DROP pressed -> sendPayloadDrop() (AUX OUT 11)")
                     root._activeVehicle.sendPayloadDrop()
                     root._dropCompleted = true
                     payloadDroppedDialog.open()
@@ -176,6 +223,7 @@ Rectangle {
         onButtonClicked: function(button, role) {
             if (button === MessageDialog.Yes) {
                 if (root._activeVehicle) {
+                    console.log("[PayloadDrop] Remove Pin confirmed -> sendPayloadPinRelease() (AUX OUT 9)")
                     root._activeVehicle.sendPayloadPinRelease()  // AUX OUT 9
                     root._pinReleaseRequested = true
                 }

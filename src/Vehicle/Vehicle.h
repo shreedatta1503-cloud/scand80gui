@@ -1108,6 +1108,10 @@ public:
     // Live SERVO_OUTPUT_RAW values (microseconds). Indexed 0..15 -> SERVO1..SERVO16.
     QVector<int>                       _servoOutputRawValues = QVector<int>(16, -1);
 
+    // Last raw RC Channel 9 (index 8) value published, used to trace Payload Drop
+    // trigger activity without logging every RC_CHANNELS packet. -1 == none seen yet.
+    int                                _lastRc9RawValue = -1;
+
     // Dynamic FactGroups
     BatteryFactGroupListModel*          _batteryFactGroupListModel  = nullptr;
     EscStatusFactGroupListModel*        _escStatusFactGroupListModel = nullptr;
