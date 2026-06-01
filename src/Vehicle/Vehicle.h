@@ -1111,6 +1111,9 @@ public:
     // Last raw RC Channel 9 (index 8) value published, used to trace Payload Drop
     // trigger activity without logging every RC_CHANNELS packet. -1 == none seen yet.
     int                                _lastRc9RawValue = -1;
+    // Edge-trigger for the "RC9 absent from the RC stream" diagnostic, so the
+    // ~5-10 Hz RC_CHANNELS stream logs the condition once rather than every packet.
+    bool                               _rc9AbsentLogged = false;
 
     // Dynamic FactGroups
     BatteryFactGroupListModel*          _batteryFactGroupListModel  = nullptr;

@@ -51,6 +51,7 @@ Rectangle {
     property bool _pinRemoved:          false       // AUX10 feedback received -> DROP enabled
     property bool _dropCompleted:       false       // DROP command sent successfully
     property int  _rc9Pwm:              -1          // Last seen RC Ch9 PWM (us); -1 == none yet
+    property bool _rc9AbsentLogged:     false       // Edge-trigger for the "RC9 absent" diagnostic
 
     readonly property real _margin: ScreenTools.defaultFontPixelWidth
 
@@ -77,9 +78,19 @@ Rectangle {
         function onRcChannelsRawChanged(channelValues) {
             var index = root.rcTriggerChannel - 1
             if (index < 0 || index >= channelValues.length) {
-                // RC9 absent from this RC stream (fewer/non-contiguous channels).
+                // RC9 absent from this RC stream (fewer/non-contiguous channels). Edge-triggered
+                // log so the operator can see *why* the widget never appears (RC9 simply isn't in
+                // the stream) instead of mistaking it for a UI/binding bug. The autopilot's
+                // "RCInput: decoding SBUS(1)" message is unrelated firmware-side decode status.
+                if (!root._rc9AbsentLogged) {
+                    console.log("[PayloadDrop] RC" + root.rcTriggerChannel +
+                                " absent from RC stream (only", channelValues.length,
+                                "channels) -> widget stays hidden")
+                    root._rc9AbsentLogged = true
+                }
                 return
             }
+            root._rc9AbsentLogged = false
             var pwm = channelValues[index]
             // -1 means the channel is not present in the RC stream.
             if (pwm < 0) {

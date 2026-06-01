@@ -1386,9 +1386,21 @@ void Vehicle::_handleRCChannels(mavlink_message_t& message)
     if (channelValues.size() > 8) {
         const int rc9 = channelValues.at(8);
         if (rc9 != _lastRc9RawValue) {
-            qCDebug(VehicleLog) << "RC9 (payload trigger) value changed:" << _lastRc9RawValue << "->" << rc9 << "us";
+            qCDebug(VehicleLog) << "RC9 (payload trigger) value changed:" << _lastRc9RawValue << "->" << rc9
+                                << "us (published" << channelValues.size() << "contiguous channels)";
             _lastRc9RawValue = rc9;
+            _rc9AbsentLogged  = false;
         }
+    } else if (!_rc9AbsentLogged) {
+        // RC9 is not present in the published (contiguous) RC stream, so PayloadDropWidget can
+        // never be revealed. Edge-triggered so the ~5-10 Hz RC_CHANNELS stream does not flood the
+        // log. The most common cause is the SBUS transmitter/receiver only carrying <9 channels.
+        // Note: the autopilot's informational "RCInput: decoding SBUS(1)" STATUSTEXT confirms SBUS
+        // itself is being decoded correctly — it is firmware-side and unrelated to this gap.
+        qCDebug(VehicleLog) << "RC9 (payload trigger) absent: only" << channelValues.size()
+                            << "contiguous RC channels published; PayloadDropWidget will stay hidden";
+        _rc9AbsentLogged = true;
+        _lastRc9RawValue = -1;
     }
 
     // rcRSSI is now a Fact on VehicleFactGroup (this); VehicleFactGroup owns the low-pass
