@@ -1,0 +1,97 @@
+# Fork-friendly Windows build: produces a downloadable QGroundControl installer .exe.
+# Run manually from the Actions tab (Run workflow). No detect-changes gating,
+# no attestation, no AWS upload, so it works on a fork without extra secrets.
+name: Build Windows EXE
+
+on:
+  workflow_dispatch:
+    inputs:
+      build_type:
+        description: "Build type"
+        type: choice
+        default: Release
+        options: [Release, Debug]
+      enable_video:
+        description: "Enable GStreamer video (slower, more failure surface)"
+        type: boolean
+        default: false
+      enable_bootstrap:
+        description: "Build the bootstrap launcher (QGroundControl.exe self-repairs runtime, app becomes QGroundControlApp.exe)"
+        type: boolean
+        default: true
+
+jobs:
+  build-windows-exe:
+    runs-on: windows-latest
+    timeout-minutes: 120
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0
+
+      - name: Build setup (install Qt + prerequisites)
+        uses: ./.github/actions/build-setup
+        with:
+          mode: desktop
+          qt-host: windows
+          qt-arch: win64_msvc2022_64
+          build-type: ${{ inputs.build_type }}
+
+      - name: Configure
+        uses: ./.github/actions/cmake-configure
+        with:
+          build-dir: ${{ github.workspace }}/build
+          source-dir: ${{ github.workspace }}
+          build-type: ${{ inputs.build_type }}
+          generator: Ninja
+          use-qt-cmake: "true"
+          extra-args: >-
+            -DQGC_ENABLE_GST_VIDEOSTREAMING=${{ inputs.enable_video && 'ON' || 'OFF' }}
+            -DQGC_WINDOWS_BOOTSTRAP=${{ inputs.enable_bootstrap && 'ON' || 'OFF' }}
+
+      - name: Build
+        uses: ./.github/actions/cmake-build
+        with:
+          build-dir: ${{ github.workspace }}/build
+          build-type: ${{ inputs.build_type }}
+
+      - name: Install (stage deployed app)
+        uses: ./.github/actions/cmake-install
+        with:
+          build-dir: ${{ github.workspace }}/build
+          build-type: ${{ inputs.build_type }}
+
+      - name: Create NSIS installer (best effort)
+        continue-on-error: true
+        working-directory: ${{ github.workspace }}/build
+        shell: pwsh
+        run: cpack -G NSIS -C ${{ inputs.build_type }} --verbose
+
+      - name: Collect outputs
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path artifacts | Out-Null
+          # NSIS installer(s)
+          Get-ChildItem -Path build -Recurse -Filter *.exe |
+            Where-Object { $_.Name -match 'installer|QGroundControl-' } |
+            ForEach-Object { Copy-Item $_.FullName artifacts\ -Force }
+          # Raw built executables as a fallback. With the bootstrap launcher
+          # enabled, QGroundControl.exe is the launcher and QGroundControlApp.exe
+          # is the Qt application; collect whichever are present.
+          foreach ($name in @("QGroundControl.exe", "QGroundControlApp.exe")) {
+            $exe = Join-Path "build\${{ inputs.build_type }}" $name
+            if (Test-Path $exe) { Copy-Item $exe artifacts\ -Force }
+          }
+          Write-Host "Collected:"; Get-ChildItem artifacts | Format-Table Name,Length
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: QGroundControl-Windows-${{ inputs.build_type }}
+          path: |
+            artifacts/**
+            build/AppDir/**
+          if-no-files-found: warn
+          retention-days: 14
