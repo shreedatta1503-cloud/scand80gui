@@ -1379,28 +1379,37 @@ void Vehicle::_handleRCChannels(mavlink_message_t& message)
         clampedValues[channelIndex] = std::clamp(channelValues[channelIndex], 1000, 2000);
     }
 
-    // Trace Payload Drop trigger activity: RC Channel 9 is index 8 (0-based). Log only on a
-    // value change so the ~5-10 Hz RC_CHANNELS stream does not flood the log. This is the
-    // C++-side "RC9 value reception / change detection" instrumentation the Fly View widget
-    // (PayloadDropWidget.qml) reacts to via the rcChannelsRawChanged signal below.
-    if (channelValues.size() > 8) {
-        const int rc9 = channelValues.at(8);
+    // ---- Payload Drop trigger: RC Channel 9 (index 8) ----
+    // Read Ch9 from the *raw* (pre-truncation) values, not from the contiguous channelValues built
+    // above. The contiguous filter drops every channel from the first UINT16_MAX onward (and bails
+    // out entirely on a mid-stream gap), so a genuine Ch9 value can be hidden from rcChannelsRawChanged
+    // even though the autopilot reported it. The dedicated rc9TriggerChanged signal below carries Ch9
+    // independently of that path, so PayloadDropWidget reveals reliably whenever Ch9 is actually present.
+    //
+    // Both transitions are also surfaced once via a user-visible app message: the console traces are
+    // invisible in the in-app message panel, which left "widget never appears" indistinguishable from a
+    // UI bug. The most common real cause is a transmitter/receiver carrying <9 channels (Ch9 == UINT16_MAX).
+    // The autopilot's "RCInput: decoding SBUS(1)" STATUSTEXT only confirms SBUS decode and is unrelated.
+    const bool rc9Present = (rawChannelValues[8] != UINT16_MAX);
+    if (rc9Present) {
+        const int rc9 = rawChannelValues[8];
         if (rc9 != _lastRc9RawValue) {
-            qCDebug(VehicleLog) << "RC9 (payload trigger) value changed:" << _lastRc9RawValue << "->" << rc9
-                                << "us (published" << channelValues.size() << "contiguous channels)";
+            if (_lastRc9RawValue == -1) {
+                QGC::showAppMessage(tr("Payload Drop: RC channel 9 detected (%1 us). Move Ch9 to reveal the widget.").arg(rc9));
+            }
+            qCDebug(VehicleLog) << "RC9 (payload trigger) value changed:" << _lastRc9RawValue << "->" << rc9 << "us";
             _lastRc9RawValue = rc9;
-            _rc9AbsentLogged  = false;
+            _rc9AbsentLogged = false;
+            emit rc9TriggerChanged(rc9);
         }
     } else if (!_rc9AbsentLogged) {
-        // RC9 is not present in the published (contiguous) RC stream, so PayloadDropWidget can
-        // never be revealed. Edge-triggered so the ~5-10 Hz RC_CHANNELS stream does not flood the
-        // log. The most common cause is the SBUS transmitter/receiver only carrying <9 channels.
-        // Note: the autopilot's informational "RCInput: decoding SBUS(1)" STATUSTEXT confirms SBUS
-        // itself is being decoded correctly — it is firmware-side and unrelated to this gap.
-        qCDebug(VehicleLog) << "RC9 (payload trigger) absent: only" << channelValues.size()
-                            << "contiguous RC channels published; PayloadDropWidget will stay hidden";
+        qCDebug(VehicleLog) << "RC9 (payload trigger) absent from RC_CHANNELS; PayloadDropWidget will stay hidden";
+        QGC::showAppMessage(tr("Payload Drop: RC channel 9 is not present in the RC stream, so the widget "
+                               "cannot appear. Ensure your transmitter/receiver sends at least 9 channels "
+                               "(e.g. SBUS 16-channel mode) and that Ch9 is assigned."));
         _rc9AbsentLogged = true;
         _lastRc9RawValue = -1;
+        emit rc9TriggerChanged(-1);
     }
 
     // rcRSSI is now a Fact on VehicleFactGroup (this); VehicleFactGroup owns the low-pass

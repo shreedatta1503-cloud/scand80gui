@@ -75,46 +75,34 @@ Rectangle {
         target: root._activeVehicle
         enabled: root._activeVehicle
 
-        function onRcChannelsRawChanged(channelValues) {
-            var index = root.rcTriggerChannel - 1
-            if (index < 0 || index >= channelValues.length) {
-                // RC9 absent from this RC stream (fewer/non-contiguous channels). Edge-triggered
-                // log so the operator can see *why* the widget never appears (RC9 simply isn't in
-                // the stream) instead of mistaking it for a UI/binding bug. The autopilot's
-                // "RCInput: decoding SBUS(1)" message is unrelated firmware-side decode status.
-                if (!root._rc9AbsentLogged) {
-                    console.log("[PayloadDrop] RC" + root.rcTriggerChannel +
-                                " absent from RC stream (only", channelValues.length,
-                                "channels) -> widget stays hidden")
-                    root._rc9AbsentLogged = true
-                }
+        // Ch9 arrives via the dedicated rc9TriggerChanged signal, which Vehicle reads straight from
+        // the raw RC_CHANNELS values (before the contiguous-channel truncation that can otherwise
+        // hide Ch9 from rcChannelsRawChanged). pwm == -1 means Ch9 is not present in the RC stream;
+        // in that case Vehicle has already shown a user-visible message explaining why.
+        function onRc9TriggerChanged(pwm) {
+            if (pwm < 0) {
+                // Ch9 dropped out of the RC stream. Keep the last reading so the readout shows the
+                // staleness rather than flicker; the widget simply won't be (re)revealed.
+                root._rc9AbsentLogged = true
                 return
             }
             root._rc9AbsentLogged = false
-            var pwm = channelValues[index]
-            // -1 means the channel is not present in the RC stream.
-            if (pwm < 0) {
-                return
-            }
 
             // ---- Change detection ----
-            // Trigger on ANY change in the RC9 PWM value (not on an absolute level/threshold),
-            // including the very first reading after startup (previous value == -1). This is
-            // why the widget now appears on RC9 activity even when the value never crosses
-            // 1500us. Logging is throttled to changes so the ~5-10 Hz RC stream does not flood.
+            // Reveal on ANY change in the Ch9 PWM value (not on an absolute level/threshold),
+            // including the very first reading after startup (previous value == -1), so the widget
+            // appears on Ch9 activity even when the value never crosses rcTriggerThresholdUs.
             if (pwm === root._rc9Pwm) {
                 return
             }
-            console.log("[PayloadDrop] RC9 received:", pwm, "us (was", root._rc9Pwm,
-                        ") -> change detected")
+            console.log("[PayloadDrop] RC9:", pwm, "us (was", root._rc9Pwm, ") -> change detected")
             root._rc9Pwm = pwm
 
-            // Any RC9 change reveals the widget, unless a drop just completed and is awaiting
-            // its acknowledgement dialog. This handler runs on the UI thread (Qt queues the
-            // rcChannelsRawChanged signal from the MAVLink receive path to the GUI thread),
-            // so mutating visual state directly here is thread-safe.
+            // Any Ch9 change reveals the widget, unless a drop just completed and is awaiting its
+            // acknowledgement dialog. rc9TriggerChanged is queued to the GUI thread, so mutating
+            // visual state directly here is thread-safe.
             if (!root._dropCompleted && !root._widgetVisible) {
-                console.log("[PayloadDrop] RC9 activity -> revealing widget on main screen")
+                console.log("[PayloadDrop] RC9 activity -> revealing widget")
                 root._widgetVisible = true
             }
         }

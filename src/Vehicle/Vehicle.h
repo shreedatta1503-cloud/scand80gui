@@ -791,6 +791,13 @@ signals:
     ///     @param channelValues The current raw values for rc channels
     void rcChannelsRawChanged(QVector<int> channelValues);
 
+    /// Payload Drop trigger: RC Channel 9 (index 8) PWM, read directly from the raw RC_CHANNELS
+    /// values *before* the contiguous-channel truncation applied to rcChannelsRawChanged. This lets
+    /// PayloadDropWidget react to Ch9 even when a channel gap would otherwise drop it from the
+    /// published (contiguous) array.
+    ///     @param pwm Ch9 PWM in microseconds, or -1 when Ch9 is not present in the RC stream.
+    void rc9TriggerChanged(int pwm);
+
     /// Filtered RC channel values coming from RC_CHANNELS message: clamped 1000:2000
     ///     @param channelValues The clamped values for rc channels
     void rcChannelsClampedChanged(QVector<int> channelValues);
