@@ -120,8 +120,9 @@ Rectangle {
             if (pwm >= 0 && pwm >= root.pinFeedbackThresholdUs) {
                 console.log("[PayloadDrop] AUX OUT", root.pinFeedbackServo, "feedback", pwm,
                             "us -> pin removed, enabling DROP")
+                // Acknowledgement feedback is shown purely by recolouring the Remove Pin button
+                // (neon green / red border) below — no dialog, toast, or modal is raised.
                 root._pinRemoved = true
-                pinRemovedDialog.open()
             }
         }
     }
@@ -149,17 +150,19 @@ Rectangle {
                                             .arg(root._rc9Pwm > root.rcTriggerThresholdUs ? qsTr("high") : qsTr("low"))
         }
 
-        // ---- Remove Pin button: rectangular, saffron, thin red border ----
+        // ---- Remove Pin button: saffron, thin red border. Turns neon green (still red
+        //      border) once AUX OUT 10 acknowledges pin removal — this colour change is the
+        //      only acknowledgement feedback; it persists until resetState() reverts it. ----
         Rectangle {
             id:                     removePinButton
             Layout.alignment:       Qt.AlignHCenter
             Layout.preferredWidth:  ScreenTools.defaultFontPixelWidth * 16
             Layout.preferredHeight: ScreenTools.defaultFontPixelHeight * 2.5
             radius:                 ScreenTools.defaultFontPixelHeight / 3
-            color:                  "#F4C430"   // Saffron
+            color:                  root._pinRemoved ? "#39FF14" : "#F4C430"  // Neon green once ack'd, else saffron
             border.width:           1
             border.color:           "red"
-            opacity:                root._pinRemoved ? 0.4 : 1.0
+            opacity:                1.0
 
             QGCLabel {
                 anchors.centerIn:   parent
@@ -229,15 +232,6 @@ Rectangle {
             }
             confirmRemovePinDialog.close()
         }
-    }
-
-    // "Pin Removed" notification once AUX OUT 10 feedback confirms actuation.
-    MessageDialog {
-        id:         pinRemovedDialog
-        title:      qsTr("Pin Removed")
-        text:       qsTr("Pin Removed")
-        buttons:    MessageDialog.Ok
-        onButtonClicked: pinRemovedDialog.close()
     }
 
     // "Payload Dropped" notification; on dismissal the widget resets and hides.

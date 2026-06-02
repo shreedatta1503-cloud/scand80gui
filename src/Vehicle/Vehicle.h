@@ -739,6 +739,10 @@ public slots:
     Q_INVOKABLE void sendPayloadPinRelease();
     /// Drives the payload-release servo (AUX OUT 11) via MAV_CMD_DO_SET_SERVO.
     Q_INVOKABLE void sendPayloadDrop();
+    /// Toggles the navigation lights output (AUX OUT 13) via MAV_CMD_DO_SET_SERVO.
+    /// @param on true -> 2000us (ON), false -> 1000us (OFF). The actual state is observed
+    ///           back through servoOutputsChanged (SERVO13 / index 12); this only commands it.
+    Q_INVOKABLE void sendNavigationLights(bool on);
 
 signals:
     void coordinateChanged              (QGeoCoordinate coordinate);

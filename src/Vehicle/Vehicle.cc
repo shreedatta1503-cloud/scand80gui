@@ -3206,6 +3206,24 @@ void Vehicle::sendPayloadDrop()
             kReleasePwmUs);         // Param2: PWM (us)
 }
 
+void Vehicle::sendNavigationLights(bool on)
+{
+    // AUX OUT 13 drives the navigation-lights output. On ArduPilot, AUX OUT n maps to SERVOn,
+    // so the DO_SET_SERVO instance is the channel number. The resulting PWM is observed back
+    // through SERVO_OUTPUT_RAW (servoOutputsChanged, SERVO13 == index 12); the UI updates only
+    // from that feedback, never from the act of sending this command.
+    static constexpr float kNavLightsServo = 13.0f;     // AUX OUT 13
+    static constexpr float kOnPwmUs        = 2000.0f;   // Lights ON
+    static constexpr float kOffPwmUs       = 1000.0f;   // Lights OFF
+
+    sendMavCommand(
+            _defaultComponentId,
+            MAV_CMD_DO_SET_SERVO,
+            false,                          // Show errors: failures are logged, never popped up
+            kNavLightsServo,                // Param1: Servo instance (AUX OUT 13)
+            on ? kOnPwmUs : kOffPwmUs);     // Param2: PWM (us)
+}
+
 void Vehicle::setEstimatorOrigin(const QGeoCoordinate& centerCoord)
 {
     SharedLinkInterfacePtr sharedLink = vehicleLinkManager()->primaryLink().lock();
