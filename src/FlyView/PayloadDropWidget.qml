@@ -8,8 +8,6 @@
  ****************************************************************************/
 
 import QtQuick
-import QtQuick.Controls
-import QtQuick.Dialogs
 import QtQuick.Layouts
 
 import QGroundControl
@@ -17,20 +15,25 @@ import QGroundControl.Controls
 
 // Payload Drop widget.
 //
-// Hidden by default; appears when RC Channel 9 activity is detected. The pin must
-// first be removed (drives AUX OUT 9 / SERVO9) and confirmed via AUX OUT 10
-// (SERVO10) feedback before the DROP action (AUX OUT 11 / SERVO11) is enabled.
-// After a successful drop the widget resets and hides itself.
+// Thin presentation layer over the C++ PayloadDropController backend. The controller owns the
+// authoritative workflow state on a dedicated worker thread (RC9 monitoring, pin/drop sequence,
+// AUX OUT 10 feedback), so this widget only *renders* that state and forwards button presses.
+//
+// Visibility is driven solely by RC Channel 9: high (2000us) shows the widget, low (1000us) hides
+// it. Hiding is non-destructive — the controller keeps the full workflow state while hidden, so
+// when RC9 returns to 2000us the widget reappears exactly where it left off (pin/drop progress,
+// button colours, RC readout all preserved). There is no completion dialog; a successful DROP
+// completes silently.
 Rectangle {
     id:         root
-    visible:    _widgetVisible
+    visible:    controller.widgetVisible
 
     // Trace visibility transitions (widget shown/hidden) on the UI thread.
     onVisibleChanged: console.log("[PayloadDrop] widget visibility ->", visible,
-                                  "(RC9 =", root._rc9Pwm, "us )")
+                                  "(RC9 =", controller.rc9Pwm, "us )")
 
-    Component.onCompleted: console.log("[PayloadDrop] widget created; waiting for RC Channel",
-                                       root.rcTriggerChannel, "activity")
+    Component.onCompleted: console.log("[PayloadDrop] widget created; visibility driven by RC Channel",
+                                       root.rcTriggerChannel, "(2000us shows / 1000us hides)")
     implicitWidth:  mainColumn.implicitWidth  + (_margin * 2)
     implicitHeight: mainColumn.implicitHeight + (_margin * 2)
     radius:     ScreenTools.defaultFontPixelHeight / 2
@@ -38,94 +41,24 @@ Rectangle {
     border.width: 1
     border.color: qgcPal.text
 
-    // ---- Configuration (channels are 1-based; ArduPilot AUX OUT n == SERVOn) ----
-    property int    rcTriggerChannel:       9       // RC Channel that reveals the widget
-    property int    rcTriggerThresholdUs:   1500    // PWM above which Ch9 is considered "active"
-    property int    pinFeedbackServo:       10      // AUX OUT 10 limit-switch feedback channel
-    property int    pinFeedbackThresholdUs: 1500    // PWM above which the pin is considered removed
-
-    // ---- Internal state ----
-    property var  _activeVehicle:       QGroundControl.multiVehicleManager.activeVehicle
-    property bool _widgetVisible:       false       // Revealed by RC Ch9 activity
-    property bool _pinReleaseRequested: false       // Remove Pin confirmed, awaiting AUX10 feedback
-    property bool _pinRemoved:          false       // AUX10 feedback received -> DROP enabled
-    property bool _dropCompleted:       false       // DROP command sent successfully
-    property int  _rc9Pwm:              -1          // Last seen RC Ch9 PWM (us); -1 == none yet
-    property bool _rc9AbsentLogged:     false       // Edge-trigger for the "RC9 absent" diagnostic
+    // ---- Configuration (display only; channel mapping lives in the controller) ----
+    property int    rcTriggerChannel:       9       // RC Channel that reveals the widget (display label)
+    property int    rcTriggerThresholdUs:   1500    // PWM above which Ch9 reads "high" (display label)
 
     readonly property real _margin: ScreenTools.defaultFontPixelWidth
 
     QGCPalette { id: qgcPal; colorGroupEnabled: enabled }
 
+    // ---- Backend: owns workflow state + RC9/servo monitoring on a worker thread ----
+    // The controller persists for the lifetime of this widget. Toggling root.visible (above) does
+    // NOT touch the controller, so all workflow state survives every hide/show cycle.
+    PayloadDropController {
+        id:      controller
+        vehicle: QGroundControl.multiVehicleManager.activeVehicle
+    }
+
     // Consume clicks so they don't fall through to the map/video underneath.
     DeadMouseArea { anchors.fill: parent }
-
-    // Reset to the initial (hidden) state. _rc9Pwm is intentionally preserved so the widget
-    // only re-appears on a genuine new RC9 change, not on the next identical RC packet.
-    function resetState() {
-        console.log("[PayloadDrop] resetState -> hiding widget, clearing pin/drop state")
-        _pinReleaseRequested = false
-        _pinRemoved          = false
-        _dropCompleted       = false
-        _widgetVisible       = false
-    }
-
-    // ---- RC Channel 9 monitoring: reveal the widget on activity ----
-    Connections {
-        target: root._activeVehicle
-        enabled: root._activeVehicle
-
-        // Ch9 arrives via the dedicated rc9TriggerChanged signal, which Vehicle reads straight from
-        // the raw RC_CHANNELS values (before the contiguous-channel truncation that can otherwise
-        // hide Ch9 from rcChannelsRawChanged). pwm == -1 means Ch9 is not present in the RC stream;
-        // in that case Vehicle has already shown a user-visible message explaining why.
-        function onRc9TriggerChanged(pwm) {
-            if (pwm < 0) {
-                // Ch9 dropped out of the RC stream. Keep the last reading so the readout shows the
-                // staleness rather than flicker; the widget simply won't be (re)revealed.
-                root._rc9AbsentLogged = true
-                return
-            }
-            root._rc9AbsentLogged = false
-
-            // ---- Change detection ----
-            // Reveal on ANY change in the Ch9 PWM value (not on an absolute level/threshold),
-            // including the very first reading after startup (previous value == -1), so the widget
-            // appears on Ch9 activity even when the value never crosses rcTriggerThresholdUs.
-            if (pwm === root._rc9Pwm) {
-                return
-            }
-            console.log("[PayloadDrop] RC9:", pwm, "us (was", root._rc9Pwm, ") -> change detected")
-            root._rc9Pwm = pwm
-
-            // Any Ch9 change reveals the widget, unless a drop just completed and is awaiting its
-            // acknowledgement dialog. rc9TriggerChanged is queued to the GUI thread, so mutating
-            // visual state directly here is thread-safe.
-            if (!root._dropCompleted && !root._widgetVisible) {
-                console.log("[PayloadDrop] RC9 activity -> revealing widget")
-                root._widgetVisible = true
-            }
-        }
-
-        // ---- AUX OUT 10 feedback: confirm pin removal, enable DROP ----
-        function onServoOutputsChanged(servoValues) {
-            if (!root._pinReleaseRequested || root._pinRemoved) {
-                return
-            }
-            var index = root.pinFeedbackServo - 1
-            if (index < 0 || index >= servoValues.length) {
-                return
-            }
-            var pwm = servoValues[index]
-            if (pwm >= 0 && pwm >= root.pinFeedbackThresholdUs) {
-                console.log("[PayloadDrop] AUX OUT", root.pinFeedbackServo, "feedback", pwm,
-                            "us -> pin removed, enabling DROP")
-                // Acknowledgement feedback is shown purely by recolouring the Remove Pin button
-                // (neon green / red border) below — no dialog, toast, or modal is raised.
-                root._pinRemoved = true
-            }
-        }
-    }
 
     ColumnLayout {
         id:                 mainColumn
@@ -142,24 +75,24 @@ Rectangle {
         QGCLabel {
             Layout.alignment:       Qt.AlignHCenter
             font.pointSize:         ScreenTools.smallFontPointSize
-            text:                   root._rc9Pwm < 0
+            text:                   controller.rc9Pwm < 0
                                         ? qsTr("RC%1: --").arg(root.rcTriggerChannel)
                                         : qsTr("RC%1: %2 µs (%3)")
                                             .arg(root.rcTriggerChannel)
-                                            .arg(root._rc9Pwm)
-                                            .arg(root._rc9Pwm > root.rcTriggerThresholdUs ? qsTr("high") : qsTr("low"))
+                                            .arg(controller.rc9Pwm)
+                                            .arg(controller.rc9Pwm > root.rcTriggerThresholdUs ? qsTr("high") : qsTr("low"))
         }
 
         // ---- Remove Pin button: saffron, thin red border. Turns neon green (still red
         //      border) once AUX OUT 10 acknowledges pin removal — this colour change is the
-        //      only acknowledgement feedback; it persists until resetState() reverts it. ----
+        //      only acknowledgement feedback (no dialog/toast/modal). ----
         Rectangle {
             id:                     removePinButton
             Layout.alignment:       Qt.AlignHCenter
             Layout.preferredWidth:  ScreenTools.defaultFontPixelWidth * 16
             Layout.preferredHeight: ScreenTools.defaultFontPixelHeight * 2.5
             radius:                 ScreenTools.defaultFontPixelHeight / 3
-            color:                  root._pinRemoved ? "#39FF14" : "#F4C430"  // Neon green once ack'd, else saffron
+            color:                  controller.pinRemoved ? "#39FF14" : "#F4C430"  // Neon green once ack'd, else saffron
             border.width:           1
             border.color:           "red"
             opacity:                1.0
@@ -173,18 +106,13 @@ Rectangle {
 
             MouseArea {
                 anchors.fill:   parent
-                enabled:        !root._pinRemoved && !root._pinReleaseRequested && root._activeVehicle
-                // Execute the pin release immediately on click — no confirmation dialog.
-                // sendPayloadPinRelease() enqueues a non-blocking MAVLink command (AUX OUT 9)
-                // and returns at once; ACK is handled asynchronously via servoOutputsChanged,
-                // so the GUI thread is never blocked.
+                enabled:        !controller.pinRemoved && !controller.pinReleaseRequested && controller.vehicle
+                // Execute the pin release immediately on click — no confirmation dialog. The
+                // controller fires the non-blocking AUX OUT 9 command and records the request on its
+                // worker thread; ACK is handled asynchronously, so the GUI thread is never blocked.
                 onClicked: {
-                    if (!root._activeVehicle) {
-                        return
-                    }
-                    console.log("[PayloadDrop] Remove Pin pressed -> sendPayloadPinRelease() (AUX OUT 9)")
-                    root._activeVehicle.sendPayloadPinRelease()  // AUX OUT 9
-                    root._pinReleaseRequested = true
+                    console.log("[PayloadDrop] Remove Pin pressed -> controller.requestPinRelease() (AUX OUT 9)")
+                    controller.requestPinRelease()
                 }
             }
         }
@@ -196,12 +124,12 @@ Rectangle {
             Layout.preferredWidth:  ScreenTools.defaultFontPixelHeight * 5
             Layout.preferredHeight: Layout.preferredWidth
             radius:                 width / 2
-            color:                  root._dropCompleted ? "skyblue" : "red"
+            color:                  controller.dropCompleted ? "skyblue" : "red"
             border.width:           1
-            border.color:           root._dropCompleted ? "red" : "white"
+            border.color:           controller.dropCompleted ? "red" : "white"
             opacity:                _dropEnabled ? 1.0 : 0.45
 
-            readonly property bool _dropEnabled: root._pinRemoved && !root._dropCompleted && root._activeVehicle
+            readonly property bool _dropEnabled: controller.pinRemoved && !controller.dropCompleted && controller.vehicle
 
             QGCLabel {
                 anchors.centerIn:   parent
@@ -214,31 +142,13 @@ Rectangle {
             MouseArea {
                 anchors.fill:   parent
                 enabled:        dropButton._dropEnabled
+                // Fire-and-complete silently: the controller sends the non-blocking AUX OUT 11
+                // command and latches dropCompleted. No "Payload Dropped" dialog is shown.
                 onClicked: {
-                    console.log("[PayloadDrop] DROP pressed -> sendPayloadDrop() (AUX OUT 11)")
-                    root._activeVehicle.sendPayloadDrop()
-                    root._dropCompleted = true
-                    payloadDroppedDialog.open()
+                    console.log("[PayloadDrop] DROP pressed -> controller.requestDrop() (AUX OUT 11)")
+                    controller.requestDrop()
                 }
             }
-        }
-    }
-
-    // ---- Dialogs ----
-    //
-    // NOTE: Remove Pin has NO confirmation dialog. Clicking the button fires
-    // sendPayloadPinRelease() directly (see the Remove Pin MouseArea above). The only
-    // remaining dialog is the post-DROP "Payload Dropped" notification below.
-
-    // "Payload Dropped" notification; on dismissal the widget resets and hides.
-    MessageDialog {
-        id:         payloadDroppedDialog
-        title:      qsTr("Payload Dropped")
-        text:       qsTr("Payload Dropped")
-        buttons:    MessageDialog.Ok
-        onButtonClicked: {
-            payloadDroppedDialog.close()
-            root.resetState()
         }
     }
 }

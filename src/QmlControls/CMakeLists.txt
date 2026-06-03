@@ -70,6 +70,8 @@ target_sources(${CMAKE_PROJECT_NAME}
         TransformPositionController.h
         ServoOutputMonitorController.cc
         ServoOutputMonitorController.h
+        PayloadDropController.cc
+        PayloadDropController.h
 )
 
 target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
