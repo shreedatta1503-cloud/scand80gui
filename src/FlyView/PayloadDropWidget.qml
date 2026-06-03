@@ -174,7 +174,18 @@ Rectangle {
             MouseArea {
                 anchors.fill:   parent
                 enabled:        !root._pinRemoved && !root._pinReleaseRequested && root._activeVehicle
-                onClicked:      confirmRemovePinDialog.open()
+                // Execute the pin release immediately on click — no confirmation dialog.
+                // sendPayloadPinRelease() enqueues a non-blocking MAVLink command (AUX OUT 9)
+                // and returns at once; ACK is handled asynchronously via servoOutputsChanged,
+                // so the GUI thread is never blocked.
+                onClicked: {
+                    if (!root._activeVehicle) {
+                        return
+                    }
+                    console.log("[PayloadDrop] Remove Pin pressed -> sendPayloadPinRelease() (AUX OUT 9)")
+                    root._activeVehicle.sendPayloadPinRelease()  // AUX OUT 9
+                    root._pinReleaseRequested = true
+                }
             }
         }
 
@@ -214,25 +225,10 @@ Rectangle {
     }
 
     // ---- Dialogs ----
-
-    // Remove Pin confirmation (Step 1/2).
-    MessageDialog {
-        id:         confirmRemovePinDialog
-        title:      qsTr("Remove Pin")
-        text:       qsTr("Are you sure?")
-        buttons:    MessageDialog.Yes | MessageDialog.No
-
-        onButtonClicked: function(button, role) {
-            if (button === MessageDialog.Yes) {
-                if (root._activeVehicle) {
-                    console.log("[PayloadDrop] Remove Pin confirmed -> sendPayloadPinRelease() (AUX OUT 9)")
-                    root._activeVehicle.sendPayloadPinRelease()  // AUX OUT 9
-                    root._pinReleaseRequested = true
-                }
-            }
-            confirmRemovePinDialog.close()
-        }
-    }
+    //
+    // NOTE: Remove Pin has NO confirmation dialog. Clicking the button fires
+    // sendPayloadPinRelease() directly (see the Remove Pin MouseArea above). The only
+    // remaining dialog is the post-DROP "Payload Dropped" notification below.
 
     // "Payload Dropped" notification; on dismissal the widget resets and hides.
     MessageDialog {
