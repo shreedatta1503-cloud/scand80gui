@@ -4,9 +4,14 @@
 .claude.json
 .claude/
 .bash_history
+.ssh/
 
 # --- Large installer (exceeds GitHub 100MB limit) ---
 QGroundControl-installer.exe
+QGroundControl-installer.exe.*
+
+# --- Transient build logs ---
+qgc-build-resume.log
 
 # --- Nested git repo (has its own remote) ---
 qgroundcontrol/
