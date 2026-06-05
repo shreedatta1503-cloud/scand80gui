@@ -3217,21 +3217,83 @@ void Vehicle::sendNavigationLights(int pwmUs)
     // (SERVO13_TRIM, ~2200us) = light OFF, and the light is energised by pulling the channel LOW.
     // The widget is the single source of truth for the rail values and passes the literal target
     // microseconds; we only validate the range here (DO_SET_SERVO writes the literal pulse width).
-    static constexpr float kNavLightsServo = 13.0f;     // AUX OUT 13
-    static constexpr int   kMinPwmUs       = 800;
-    static constexpr int   kMaxPwmUs       = 2200;
+    static constexpr int   kNavLightsChannel = 13;      // AUX OUT 13 == SERVO13
+    static constexpr int   kMinPwmUs         = 800;
+    static constexpr int   kMaxPwmUs         = 2200;
 
     const int clamped = qBound(kMinPwmUs, pwmUs, kMaxPwmUs);
     if (clamped != pwmUs) {
         qCWarning(VehicleLog) << "sendNavigationLights: PWM" << pwmUs << "out of range, clamped to" << clamped;
     }
 
+    // A one-shot DO_SET_SERVO only *latches* on a channel the autopilot is not otherwise driving.
+    // If SERVO13 still has an assigned function, ArduPilot keeps reasserting that channel's idle/TRIM
+    // (HIGH) rail every output cycle while this command pulls the opposite (LOW == ON) rail -- the two
+    // contend and the lamp blinks. (OFF never blinked only because the commanded OFF value sits on the
+    // same HIGH/idle rail the autopilot reasserts, so there is nothing to contend with.) Pin the
+    // channel to a latchable configuration first so ON holds steady; this is the root-cause fix.
+    _ensureNavigationLightsChannelLatches(kNavLightsChannel);
+
     sendMavCommand(
             _defaultComponentId,
             MAV_CMD_DO_SET_SERVO,
-            false,                          // Show errors: failures are logged, never popped up
-            kNavLightsServo,                // Param1: Servo instance (AUX OUT 13)
-            static_cast<float>(clamped));   // Param2: PWM (us)
+            false,                                  // Show errors: failures are logged, never popped up
+            static_cast<float>(kNavLightsChannel),  // Param1: Servo instance (AUX OUT 13)
+            static_cast<float>(clamped));           // Param2: PWM (us)
+}
+
+void Vehicle::_ensureNavigationLightsChannelLatches(int channel)
+{
+    // DO_SET_SERVO is non-latching: it holds steady only on a channel with no assigned SERVOn_FUNCTION
+    // (Disabled), because ArduPilot does not recompute/overwrite a disabled channel's output each loop.
+    // We therefore pin SERVO<channel>_FUNCTION to 0 (Disabled) and SERVO<channel>_REVERSED to 0 so the
+    // literal commanded microseconds are applied un-inverted and held. Writes are idempotent (only when
+    // a value actually differs) and every override of a non-default value is warned (audit trail).
+    if (!_parameterManager || !_parameterManager->parametersReady()) {
+        qCWarning(VehicleLog) << "Navigation lights: parameters not ready; cannot pin SERVO" << channel
+                              << "to a latchable config -- ON may blink until it is set to Disabled.";
+        return;
+    }
+
+    const int compId = ParameterManager::defaultComponentId;
+
+    const QString functionParam = QStringLiteral("SERVO%1_FUNCTION").arg(channel);
+    if (_parameterManager->parameterExists(compId, functionParam)) {
+        Fact *const functionFact = _parameterManager->getParameter(compId, functionParam);
+        const int current = functionFact->rawValue().toInt();
+        if (current != 0) {
+            qCWarning(VehicleLog) << "Navigation lights: overriding" << functionParam << "from" << current
+                                  << "to 0 (Disabled) so AUX" << channel
+                                  << "latches steady -- the autopilot was driving this channel and causing the ON-state blink.";
+            functionFact->setRawValue(0);
+        }
+    } else {
+        qCWarning(VehicleLog) << "Navigation lights:" << functionParam
+                              << "not found; cannot guarantee a steady (non-blinking) output on this vehicle.";
+    }
+
+    const QString reversedParam = QStringLiteral("SERVO%1_REVERSED").arg(channel);
+    if (_parameterManager->parameterExists(compId, reversedParam)) {
+        Fact *const reversedFact = _parameterManager->getParameter(compId, reversedParam);
+        if (reversedFact->rawValue().toInt() != 0) {
+            qCWarning(VehicleLog) << "Navigation lights: overriding" << reversedParam
+                                  << "to 0 (un-reversed) so the commanded active-low PWM is applied deterministically.";
+            reversedFact->setRawValue(0);
+        }
+    }
+
+    // Verify-only (never overwritten -- OFF/idle already works): the disarm/failsafe idle is SERVO_TRIM,
+    // which must sit on the OFF (HIGH) rail. If TRIM is on the ON/LOW rail a disarm would energise the
+    // lamp, so warn rather than silently change a working idle state.
+    const QString trimParam = QStringLiteral("SERVO%1_TRIM").arg(channel);
+    if (_parameterManager->parameterExists(compId, trimParam)) {
+        const int trim = _parameterManager->getParameter(compId, trimParam)->rawValue().toInt();
+        if (trim < 1500) {
+            qCWarning(VehicleLog) << "Navigation lights:" << trimParam << "=" << trim
+                                  << "is on the ON/LOW rail -- disarm/failsafe will energise the lamp."
+                                  << "Expected the HIGH/OFF rail (~2200us).";
+        }
+    }
 }
 
 void Vehicle::setEstimatorOrigin(const QGeoCoordinate& centerCoord)
