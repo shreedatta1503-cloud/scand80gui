@@ -85,6 +85,26 @@ runuser -u qgcuser -- env -i \
 - **Stale-lock trap:** `RunGuard` uses `setStaleLockTime(0)`, so it only reclaims a lock whose owner PID is **dead**. After a crash/kill, if that PID gets reused by an unrelated live process, QGC wrongly decides "a second instance is already running," pops an `xmessage` dialog, and parks itself **single-threaded without initializing**. Recovery: kill leftover `QGroundControl`/`xmessage` procs and `rm` any `qgc-*.lock` under the temp dirs, then relaunch.
 - **Verifying a launch:** a healthy instance reaches ~85 threads / ~350 MB RSS and logs `API.QGCApplication` → `QML ready`. A stuck (lock-blocked) instance sits at **1 thread**. The `GStreamer plugin not found` / `GST_PLUGIN_PATH unset` / `speechd` TTS `Critical` log lines are **non-fatal** in this env (video/audio disabled). The Qt Quick window does **not** composite to a capturable surface here, so screenshots are blank — the thread count + `QML ready` log is the real launch proof. Always shut down cleanly (SIGTERM) to release the lock.
 
+### Building a native Android APK
+
+A reproducible pipeline for producing a **signed, Release `arm64-v8a` APK** lives in `/root` (the `scand80gui` repo): `build_android.sh` (Linux/WSL2), `build_android.bat` (Windows 11), and `README.md`. It mirrors QGC's official CI recipe (`qgroundcontrol/.github/workflows/android.yml`) and reads every version from `build-config.json`, so it never drifts from upstream. **Do not** try to convert the `.exe` installer — this compiles from source.
+
+```bash
+cd /root
+./build_android.sh                          # full: provision toolchain → configure → build → sign → verify
+SKIP_TOOLCHAIN=1 ./build_android.sh         # reuse installed toolchain (fast; ccache warm)
+OUT_APK=My.apk SKIP_TOOLCHAIN=1 ./build_android.sh   # override output filename
+```
+
+- **Output:** `/root/QGroundControl.apk` (default name; override with `OUT_APK`). ~187 MB, signed v3 scheme, `org.mavlink.qgroundcontrol`, **minSdk 29 (Android 10)**, target/compile SDK 35, arm64-v8a only.
+- **Toolchain it provisions to `/opt`** (idempotent, versions from `build-config.json`): JDK 17, Qt 6.10.3 `android_arm64_v8a` + `gcc_64` host (via `aqt`), Android NDK r27c, SDK platform-35, build-tools 35.0.0, ccache. The desktop `gcc_64` Qt doubles as `QT_HOST_PATH`.
+- **Configure mirrors CI:** plain `cmake` (not `qt-cmake`) with `-DCMAKE_TOOLCHAIN_FILE=…/android_arm64_v8a/lib/cmake/Qt6/qt.toolchain.cmake`, `-DQT_HOST_PATH=…/gcc_64`, `-DQT_ANDROID_ABIS=arm64-v8a`, `-DQT_ANDROID_SIGN_APK=ON`, `-DQGC_QT_ANDROID_MIN_SDK_VERSION=29`. Then `cmake --build … --parallel` and `--target apk` (androiddeployqt → Gradle). LTO is auto-enabled for Release.
+- **Python venv:** the build needs `qgroundcontrol/.venv` with **`jinja2` AND `defusedxml`** (MAVLink/codegen generators import both). Missing `defusedxml` fails the `MAVLinkInstanceFields.h` gen step at ~70% of compile.
+- **Two non-obvious traps (already handled by the script):**
+  - **GStreamer Android tarball (~932 MB)** is fetched by CMake's `file(DOWNLOAD)`, which has a 60 s inactivity timeout and will time out. Pre-stage it with `curl` into `qgroundcontrol/.cache/CPM/gstreamer-android/gstreamer-android-<ver>.tar.xz` (the build validates SHA-256 against `build-config.json` and reuses the cached file). 
+  - The aqt `android_arm64_v8a` archives are labelled `MacOS-…-Android-…` on the Qt mirror — that's just Qt's internal naming; they are the correct host-agnostic Android target libs and pair with the Linux host Qt via `QT_HOST_PATH`.
+- The manifest (`qgroundcontrol/android/AndroidManifest.xml`) already ships `sensorLandscape`, USB-host/OTG intents, TCP/UDP/INTERNET, Bluetooth, and GPS — no edits needed for the standard build.
+
 ### Architecture (big picture)
 
 QGC is a Qt6 / QML + C++20 Ground Control Station for MAVLink UAVs (PX4 & ArduPilot). The C++ backend is exposed to a QML UI. Major subsystems under `qgroundcontrol/src/`:
@@ -100,7 +120,11 @@ The single executable target is defined in the top-level `CMakeLists.txt`: Qt re
 
 ## `/root` housekeeping (not in the repo)
 
+**Tracked** in `scand80gui` alongside the build-config snapshot: `build_android.sh`, `build_android.bat`, `README.md` (the Android APK pipeline, see above), and `android_release.keystore` (the self-contained signing keystore — replace with a real release key for Play Store).
+
 The following live in `/root` but are deliberately **gitignored** from `scand80gui` and must never be committed:
-- Secrets: `.git-credentials` (GitHub token), `.gitconfig`, `.claude.json`, `.claude/`, `.bash_history`.
-- `QGroundControl-installer.exe` (~169 MB — exceeds GitHub's 100 MB limit; use Git LFS if it must be tracked).
+- Secrets: `.git-credentials` (GitHub token), `.gitconfig`, `.claude.json`, `.claude/`, `.bash_history`, `.ssh/`.
+- `QGroundControl-installer.exe` and `QGroundControl-installer.exe.*` (~169 MB — exceeds GitHub's 100 MB limit; use Git LFS if it must be tracked).
+- `QGroundControl.apk` (the built ~187 MB Android artifact — also over the 100 MB limit; ship as a release asset, not in git).
+- `qgc-build-resume.log` / `build_android.log` / `build_android.run.log` (transient build logs).
 - `qgroundcontrol/` (its own repo).

@@ -6,12 +6,21 @@
 .bash_history
 .ssh/
 
-# --- Large installer (exceeds GitHub 100MB limit) ---
+# --- Large artifacts (exceed GitHub 100MB limit) ---
 QGroundControl-installer.exe
 QGroundControl-installer.exe.*
+QGroundControl.apk
+*.apk
 
 # --- Transient build logs ---
 qgc-build-resume.log
+build_android.log
+build_android.run.log
+aqtinstall.log
+
+# --- Android build caches dropped into /root ---
+.android/
+.gradle/
 
 # --- Nested git repo (has its own remote) ---
 qgroundcontrol/
