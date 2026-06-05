@@ -19,8 +19,13 @@ import QGroundControl.Controls
 // Always visible (never gated on vehicle state). Acts as both a status indicator and a
 // toggle for the navigation-lights output on AUX OUT 13 (ArduPilot SERVO13).
 //
-//   OFF: AUX OUT 13 PWM == 1000us -> translucent grey button.
-//   ON : AUX OUT 13 PWM == 2000us -> dark-green button with a saffron border.
+//   ON : AUX OUT 13 PWM == 1000us (low rail, light energised) -> dark-green button with a saffron border.
+//   OFF: AUX OUT 13 PWM == 2000us (high rail == idle/TRIM, light de-energised) -> translucent grey button.
+//
+// The output is ACTIVE-LOW: the channel idles HIGH (SERVO13_TRIM ~2200us = OFF) and is pulled LOW to
+// turn the lights ON. OFF is commanded on the SAME (high) rail as the idle/TRIM state, so a disarm,
+// failsafe, safety-switch or competing-function reassertion of the channel default cannot make the
+// output toggle (the old OFF=1000us sat on the opposite rail from TRIM=2200us and so blinked).
 //
 // The visible state is driven *only* by the PWM that Vehicle reports back through
 // servoOutputsChanged (SERVO13 == index 12) — never by the act of issuing a command. Clicking
@@ -42,9 +47,9 @@ Rectangle {
 
     // ---- Configuration (channels are 1-based; ArduPilot AUX OUT n == SERVOn) ----
     property int navServo:      13      // AUX OUT 13 navigation-lights channel
-    property int onPwmUs:       2000    // Commanded/observed ON PWM
-    property int offPwmUs:      1000    // Commanded/observed OFF PWM
-    property int onThresholdUs: 1500    // PWM at/above which the lights are considered ON
+    property int onPwmUs:       1000    // Commanded/observed ON PWM (active-low: low rail energises the light)
+    property int offPwmUs:      2000    // Commanded/observed OFF PWM (high rail == idle/TRIM, light off)
+    property int onThresholdUs: 1500    // PWM at/below which the lights are considered ON (active-low)
     property int confirmToleranceUs: 100 // |observed - target| within which a toggle is "confirmed"
     property int commandTimeoutMs:   3000 // Re-enable the button if no confirmation arrives
 
@@ -55,7 +60,8 @@ Rectangle {
     property int  _pendingTarget:   0       // PWM value the pending toggle is waiting to observe
 
     // Derived appearance state, computed purely from the observed PWM. Unknown (-1) reads as OFF.
-    readonly property bool _isOn: root._navPwm >= 0 && root._navPwm >= root.onThresholdUs
+    // ACTIVE-LOW: at/below the threshold == ON (the >= 0 guard keeps unknown (-1) reading as OFF).
+    readonly property bool _isOn: root._navPwm >= 0 && root._navPwm <= root.onThresholdUs
 
     readonly property real _margin: ScreenTools.defaultFontPixelWidth
 
@@ -83,7 +89,7 @@ Rectangle {
 
             if (pwm !== root._navPwm) {
                 console.log("[NavLights] AUX OUT", root.navServo, "PWM", pwm,
-                            "us (was", root._navPwm, ") ->", pwm >= root.onThresholdUs ? "ON" : "OFF")
+                            "us (was", root._navPwm, ") ->", pwm <= root.onThresholdUs ? "ON" : "OFF")
                 root._navPwm = pwm   // Repaints the button via the _isOn binding.
             }
 
@@ -162,7 +168,9 @@ Rectangle {
                                 "to", target, "us")
                     root._pendingTarget  = target
                     root._commandPending = true
-                    root._activeVehicle.sendNavigationLights(target === root.onPwmUs)
+                    // Pass the literal target PWM (single source of truth); active-low mapping and
+                    // range validation live in Vehicle::sendNavigationLights().
+                    root._activeVehicle.sendNavigationLights(target)
                     commandTimeout.restart()
                 }
             }

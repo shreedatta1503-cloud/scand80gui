@@ -739,10 +739,13 @@ public slots:
     Q_INVOKABLE void sendPayloadPinRelease();
     /// Drives the payload-release servo (AUX OUT 11) via MAV_CMD_DO_SET_SERVO.
     Q_INVOKABLE void sendPayloadDrop();
-    /// Toggles the navigation lights output (AUX OUT 13) via MAV_CMD_DO_SET_SERVO.
-    /// @param on true -> 2000us (ON), false -> 1000us (OFF). The actual state is observed
-    ///           back through servoOutputsChanged (SERVO13 / index 12); this only commands it.
-    Q_INVOKABLE void sendNavigationLights(bool on);
+    /// Commands the navigation-lights output (AUX OUT 13) to an explicit PWM via MAV_CMD_DO_SET_SERVO.
+    /// The output is ACTIVE-LOW: the channel idles HIGH (SERVO13_TRIM, ~2200us) = light OFF, and is
+    /// pulled LOW to energise the light. The widget owns the rail values and passes the literal
+    /// microseconds here, so the commanded value has a single source of truth (no duplicated
+    /// constants). Out-of-range values are clamped and warned. The actual state is observed back
+    /// through servoOutputsChanged (SERVO13 / index 12); this only commands it.
+    Q_INVOKABLE void sendNavigationLights(int pwmUs);
 
 signals:
     void coordinateChanged              (QGeoCoordinate coordinate);

@@ -3206,22 +3206,32 @@ void Vehicle::sendPayloadDrop()
             kReleasePwmUs);         // Param2: PWM (us)
 }
 
-void Vehicle::sendNavigationLights(bool on)
+void Vehicle::sendNavigationLights(int pwmUs)
 {
     // AUX OUT 13 drives the navigation-lights output. On ArduPilot, AUX OUT n maps to SERVOn,
     // so the DO_SET_SERVO instance is the channel number. The resulting PWM is observed back
     // through SERVO_OUTPUT_RAW (servoOutputsChanged, SERVO13 == index 12); the UI updates only
     // from that feedback, never from the act of sending this command.
+    //
+    // The output is ACTIVE-LOW: the channel's idle/disarm/failsafe state is the HIGH rail
+    // (SERVO13_TRIM, ~2200us) = light OFF, and the light is energised by pulling the channel LOW.
+    // The widget is the single source of truth for the rail values and passes the literal target
+    // microseconds; we only validate the range here (DO_SET_SERVO writes the literal pulse width).
     static constexpr float kNavLightsServo = 13.0f;     // AUX OUT 13
-    static constexpr float kOnPwmUs        = 2000.0f;   // Lights ON
-    static constexpr float kOffPwmUs       = 1000.0f;   // Lights OFF
+    static constexpr int   kMinPwmUs       = 800;
+    static constexpr int   kMaxPwmUs       = 2200;
+
+    const int clamped = qBound(kMinPwmUs, pwmUs, kMaxPwmUs);
+    if (clamped != pwmUs) {
+        qCWarning(VehicleLog) << "sendNavigationLights: PWM" << pwmUs << "out of range, clamped to" << clamped;
+    }
 
     sendMavCommand(
             _defaultComponentId,
             MAV_CMD_DO_SET_SERVO,
             false,                          // Show errors: failures are logged, never popped up
             kNavLightsServo,                // Param1: Servo instance (AUX OUT 13)
-            on ? kOnPwmUs : kOffPwmUs);     // Param2: PWM (us)
+            static_cast<float>(clamped));   // Param2: PWM (us)
 }
 
 void Vehicle::setEstimatorOrigin(const QGeoCoordinate& centerCoord)
