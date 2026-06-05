@@ -249,6 +249,40 @@ Three options, in order of convenience:
 
 Toolchain pins (from `build-config.json`): Qt **6.10.3** (min 6.10.0), CMake **3.25+**, MSVC 2022 on Windows.
 
+### ✅ Done — installer rebuilt & swapped for Nav Lights ON-blink part-2 fix (2026-06-05, later)
+
+The **part-2** Nav Lights ON-blink fix (commit `96f424173` — defer `DO_SET_SERVO` until the
+reboot-required `SERVO13_FUNCTION=0` write is confirmed; command immediately only when already
+latchable; see the Nav Lights section) plus its doc correction (`1d825a136`) are pushed to
+`scand80-dev`, the Windows build **succeeded**, and the installer carrying it is now the local `.exe`.
+
+**What was done (2026-06-05, later):**
+- Local Linux Release build (`-Werror`) passed clean; `sendNavigationLights(int)`,
+  `_ensureNavigationLightsChannelLatches(int)` (now `bool`) and the new `_commandNavigationLightsServo(int,int)`
+  symbols are all in `build/Release/QGroundControl`.
+- Dispatched `build-windows-exe.yml` on `scand80-dev`. Run
+  [`27011616483`](https://github.com/shreedatta1503-cloud/scand80gui/actions/runs/27011616483)
+  finished **success** (~38 min), built from `head_sha 1d825a136`; MSVC compile + NSIS clean.
+- Downloaded artifact `QGroundControl-Windows-Release` (id `7435832683`, 242,813,439 bytes) via the
+  32-connection parallel ranged download; assembled size matched and `unzip -t` passed. Picked the NSIS
+  installer **`QGroundControl-installer-AMD64.exe`** (103,779,939 bytes, sha256 `de822460…54dbb7`);
+  `7z t` → *Everything is Ok*.
+- **Provenance is the authoritative proof** the fix shipped: CI compiled the exact commit `1d825a136`
+  (which sits on `96f424173`), and the installer genuinely differs from the prior one (`714e26e4…` →
+  `de822460…`, +3,140 bytes). The plaintext-symbol grep is *not* authoritative for the new helper:
+  `_commandNavigationLightsServo` is a plain `private:` method (not a moc slot) and tiny, so MSVC
+  inlined it into its two call sites and dropped the out-of-line symbol (0 grep hits in the Windows
+  app binary, but **1 hit in the local GCC binary** which keeps it). `sendNavigationLights` (×4) and
+  `_ensureNavigationLightsChannelLatches` (×1) are present in the Windows binary.
+- Backed up the previous (`e31045686`) installer to
+  **`/root/QGroundControl-installer.exe.prev-20260605-1d825a13-was-e3104568`** (sha `714e26e4…`) and
+  swapped the new one into **`/root/QGroundControl-installer.exe`** (sha `de822460…`, `7z t` Ok).
+
+> Same caveat as always: the Windows GUI **cannot be executed here** (headless Linux, no Wine/QEMU/PE
+> binfmt), so validation is build-success + NSIS structure + provenance. End-to-end behaviour
+> (toggle → steady ON, no blink) needs a real Windows machine against the ArduPilot vehicle/SITL — and,
+> for a vehicle whose SERVO13 was assigned another function, the one-time `SERVO13_FUNCTION=0` + reboot.
+
 ### ✅ Done — installer rebuilt & swapped for Nav Lights ON-blink latch fix (2026-06-05)
 
 The Nav Lights ON-state blink fix (commit `e31045686` — `_ensureNavigationLightsChannelLatches`, see
