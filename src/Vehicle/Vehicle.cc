@@ -3217,9 +3217,9 @@ void Vehicle::sendNavigationLights(int pwmUs)
     // (SERVO13_TRIM, ~2200us) = light OFF, and the light is energised by pulling the channel LOW.
     // The widget is the single source of truth for the rail values and passes the literal target
     // microseconds; we only validate the range here (DO_SET_SERVO writes the literal pulse width).
-    static constexpr int   kNavLightsChannel = 13;      // AUX OUT 13 == SERVO13
-    static constexpr int   kMinPwmUs         = 800;
-    static constexpr int   kMaxPwmUs         = 2200;
+    const int channel  = 13;        // AUX OUT 13 == SERVO13 (plain local so it can be lambda-captured)
+    const int kMinPwmUs = 800;
+    const int kMaxPwmUs = 2200;
 
     const int clamped = qBound(kMinPwmUs, pwmUs, kMaxPwmUs);
     if (clamped != pwmUs) {
@@ -3230,47 +3230,51 @@ void Vehicle::sendNavigationLights(int pwmUs)
     // If SERVO13 still has an assigned function, ArduPilot keeps reasserting that channel's idle/TRIM
     // (HIGH) rail every output cycle while this command pulls the opposite (LOW == ON) rail -- the two
     // contend and the lamp blinks. (OFF never blinked only because the commanded OFF value sits on the
-    // same HIGH/idle rail the autopilot reasserts, so there is nothing to contend with.) Pin the
-    // channel to a latchable configuration first so ON holds steady; this is the root-cause fix.
-    _ensureNavigationLightsChannelLatches(kNavLightsChannel);
-
-    sendMavCommand(
-            _defaultComponentId,
-            MAV_CMD_DO_SET_SERVO,
-            false,                                  // Show errors: failures are logged, never popped up
-            static_cast<float>(kNavLightsChannel),  // Param1: Servo instance (AUX OUT 13)
-            static_cast<float>(clamped));           // Param2: PWM (us)
-}
-
-void Vehicle::_ensureNavigationLightsChannelLatches(int channel)
-{
-    // DO_SET_SERVO is non-latching: it holds steady only on a channel with no assigned SERVOn_FUNCTION
-    // (Disabled), because ArduPilot does not recompute/overwrite a disabled channel's output each loop.
-    // We therefore pin SERVO<channel>_FUNCTION to 0 (Disabled) and SERVO<channel>_REVERSED to 0 so the
-    // literal commanded microseconds are applied un-inverted and held. Writes are idempotent (only when
-    // a value actually differs) and every override of a non-default value is warned (audit trail).
-    if (!_parameterManager || !_parameterManager->parametersReady()) {
-        qCWarning(VehicleLog) << "Navigation lights: parameters not ready; cannot pin SERVO" << channel
-                              << "to a latchable config -- ON may blink until it is set to Disabled.";
+    // same HIGH/idle rail the autopilot reasserts, so there is nothing to contend with.)
+    //
+    // SERVO13_FUNCTION is REBOOT-REQUIRED and the param write is asynchronous, so we must not assume a
+    // mid-session write disables the channel before this command lands. _ensureNavigationLightsChannelLatches()
+    // therefore returns whether the channel is latchable *right now*: if so (already Disabled, or nothing
+    // better is possible) we command immediately; if it had to write SERVO13_FUNCTION=0 over an assigned
+    // function, we DEFER the command until the vehicle confirms that write (Fact::vehicleUpdated) instead
+    // of firing it into a channel the autopilot still owns -- which is exactly what produced the ON blink.
+    if (_ensureNavigationLightsChannelLatches(channel)) {
+        _commandNavigationLightsServo(channel, clamped);
         return;
     }
 
-    const int compId = ParameterManager::defaultComponentId;
+    Fact *const functionFact = _parameterManager->getParameter(
+            ParameterManager::defaultComponentId, QStringLiteral("SERVO%1_FUNCTION").arg(channel));
+    connect(functionFact, &Fact::vehicleUpdated, this,
+            [this, channel, clamped](const QVariant &) { _commandNavigationLightsServo(channel, clamped); },
+            Qt::SingleShotConnection);
+}
 
-    const QString functionParam = QStringLiteral("SERVO%1_FUNCTION").arg(channel);
-    if (_parameterManager->parameterExists(compId, functionParam)) {
-        Fact *const functionFact = _parameterManager->getParameter(compId, functionParam);
-        const int current = functionFact->rawValue().toInt();
-        if (current != 0) {
-            qCWarning(VehicleLog) << "Navigation lights: overriding" << functionParam << "from" << current
-                                  << "to 0 (Disabled) so AUX" << channel
-                                  << "latches steady -- the autopilot was driving this channel and causing the ON-state blink.";
-            functionFact->setRawValue(0);
-        }
-    } else {
-        qCWarning(VehicleLog) << "Navigation lights:" << functionParam
-                              << "not found; cannot guarantee a steady (non-blinking) output on this vehicle.";
+void Vehicle::_commandNavigationLightsServo(int channel, int pwmUs)
+{
+    sendMavCommand(
+            _defaultComponentId,
+            MAV_CMD_DO_SET_SERVO,
+            false,                              // Show errors: failures are logged, never popped up
+            static_cast<float>(channel),        // Param1: Servo instance (AUX OUT 13)
+            static_cast<float>(pwmUs));          // Param2: PWM (us)
+}
+
+bool Vehicle::_ensureNavigationLightsChannelLatches(int channel)
+{
+    // DO_SET_SERVO is non-latching: it holds steady only on a channel with SERVOn_FUNCTION=0 (Disabled),
+    // which -- per ArduPilot's own SERVOn_FUNCTION docs -- "setup[s] this output for control by auto
+    // missions or MAVLink servo set commands". Any other value hands the channel to the autopilot, which
+    // re-drives it every output loop and contends with the override. We pin SERVO<channel>_REVERSED to 0
+    // (so the active-low PWM is applied un-inverted) and SERVO<channel>_FUNCTION to 0. Writes are
+    // idempotent and every override is warned (audit trail).
+    if (!_parameterManager || !_parameterManager->parametersReady()) {
+        qCWarning(VehicleLog) << "Navigation lights: parameters not ready; commanding AUX" << channel
+                              << "directly -- ON may blink until SERVO" << channel << "_FUNCTION is Disabled(0).";
+        return true;    // nothing better is possible; let the caller command now
     }
+
+    const int compId = ParameterManager::defaultComponentId;
 
     const QString reversedParam = QStringLiteral("SERVO%1_REVERSED").arg(channel);
     if (_parameterManager->parameterExists(compId, reversedParam)) {
@@ -3294,6 +3298,32 @@ void Vehicle::_ensureNavigationLightsChannelLatches(int channel)
                                   << "Expected the HIGH/OFF rail (~2200us).";
         }
     }
+
+    // SERVO<channel>_FUNCTION is the actual blink lever.
+    const QString functionParam = QStringLiteral("SERVO%1_FUNCTION").arg(channel);
+    if (!_parameterManager->parameterExists(compId, functionParam)) {
+        qCWarning(VehicleLog) << "Navigation lights:" << functionParam
+                              << "not found; cannot guarantee a steady (non-blinking) output. Commanding anyway.";
+        return true;
+    }
+
+    Fact *const functionFact = _parameterManager->getParameter(compId, functionParam);
+    const int current = functionFact->rawValue().toInt();
+    if (current == 0) {
+        return true;    // already Disabled -- the override latches; safe to command immediately
+    }
+
+    // current != 0: the autopilot is actively driving AUX<channel>. THIS is the ON-state blink source.
+    // SERVOn_FUNCTION is RebootRequired, so this write does not disable the channel until the next FC
+    // reboot; we persist it (so the channel is free from then on) and warn, and signal the caller to
+    // defer the servo command until this write is confirmed rather than fire it into a contended channel.
+    qCWarning(VehicleLog) << "Navigation lights:" << functionParam << "=" << current
+                          << "-- the autopilot is driving AUX" << channel << "(the ON-state blink source)."
+                          << "Writing it to 0 (Disabled);" << functionParam
+                          << "is REBOOT-REQUIRED, so a fully steady output begins only after the vehicle"
+                          << "reboots with this value. Deferring DO_SET_SERVO until the write is confirmed.";
+    functionFact->setRawValue(0);
+    return false;
 }
 
 void Vehicle::setEstimatorOrigin(const QGeoCoordinate& centerCoord)

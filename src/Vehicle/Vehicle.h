@@ -894,13 +894,20 @@ private:
     void _geoFenceManagerError          (int errorCode, const QString& errorMsg);
     void _rallyPointManagerError        (int errorCode, const QString& errorMsg);
     void _say                           (const QString& text);
-    /// Pins the navigation-lights output channel (AUX OUT @a channel == SERVO@a channel) to a
+    /// Brings the navigation-lights output channel (AUX OUT @a channel == SERVO@a channel) to a
     /// configuration on which a one-shot MAV_CMD_DO_SET_SERVO actually *latches*: SERVO<n>_FUNCTION=0
-    /// (Disabled, so the autopilot does not re-drive the channel) and SERVO<n>_REVERSED=0. Without
-    /// this, a function-driven channel keeps reasserting its idle/TRIM rail against the commanded ON
-    /// rail and the lamp blinks. Idempotent (writes only when a value differs) and warns whenever it
-    /// has to override a non-default value or cannot verify the channel. No-op until params are ready.
-    void _ensureNavigationLightsChannelLatches(int channel);
+    /// (Disabled, so the autopilot hands the channel to MAVLink servo-set commands and stops re-driving
+    /// it) and SERVO<n>_REVERSED=0. A function-driven channel otherwise keeps reasserting its idle/TRIM
+    /// rail against the commanded ON rail and the lamp blinks.
+    /// @return true if the channel is already latchable *now* (SERVO<n>_FUNCTION==0, or params/the param
+    /// are unavailable so we cannot do better) and the caller may command immediately. Returns false when
+    /// it had to write SERVO<n>_FUNCTION=0 over an assigned function: that parameter is REBOOT-REQUIRED
+    /// and the write is asynchronous, so the caller must DEFER DO_SET_SERVO until the write is confirmed
+    /// (Fact::vehicleUpdated) rather than fire it into a channel the autopilot still owns this session.
+    /// Idempotent (writes only when a value differs) and warns on every override. No-op until params ready.
+    bool _ensureNavigationLightsChannelLatches(int channel);
+    /// Issues the one-shot MAV_CMD_DO_SET_SERVO(@a channel, @a pwmUs) for the navigation-lights output.
+    void _commandNavigationLightsServo(int channel, int pwmUs);
     QString _vehicleIdSpeech            ();
     void _handleMavlinkLoggingData      (mavlink_message_t& message);
     void _handleMavlinkLoggingDataAcked (mavlink_message_t& message);
