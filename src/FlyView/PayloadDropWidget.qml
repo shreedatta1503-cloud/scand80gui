@@ -8,6 +8,7 @@
  ****************************************************************************/
 
 import QtQuick
+import QtQuick.Controls
 import QtQuick.Layouts
 
 import QGroundControl
@@ -59,6 +60,49 @@ Rectangle {
 
     // Consume clicks so they don't fall through to the map/video underneath.
     DeadMouseArea { anchors.fill: parent }
+
+    // ---- Modal DROP confirmation dialog ----
+    // Parented to the application overlay so it is centred over the whole window and is genuinely
+    // modal (blocks all interaction behind it) while remaining non-blocking for the UI thread.
+    // A single instance is reused; the DROP button's `visible` guard prevents stacking dialogs.
+    Dialog {
+        id:                 confirmDropDialog
+        parent:             Overlay.overlay
+        anchors.centerIn:   parent
+        modal:              true
+        closePolicy:        Popup.NoAutoClose   // Must pick YES or NO — no click-outside / Esc dismissal.
+        title:              qsTr("Payload Dropping")
+        padding:            ScreenTools.defaultFontPixelHeight
+
+        contentItem: QGCLabel {
+            text:               qsTr("Are you sure?")
+            wrapMode:           Text.WordWrap
+            horizontalAlignment: Text.AlignHCenter
+        }
+
+        footer: DialogButtonBox {
+            QGCButton {
+                text:                       qsTr("YES")
+                DialogButtonBox.buttonRole: DialogButtonBox.AcceptRole
+            }
+            QGCButton {
+                text:                       qsTr("NO")
+                DialogButtonBox.buttonRole: DialogButtonBox.RejectRole
+            }
+        }
+
+        // YES: close and continue the EXISTING drop execution sequence exactly as before.
+        // controller.requestDrop() logs the "Confirmed" event and (on its worker) "Executed".
+        onAccepted: {
+            console.log("[PayloadDrop] DROP confirmed -> controller.requestDrop() (AUX OUT 11)")
+            controller.requestDrop()
+        }
+        // NO: close immediately, command nothing, return to the previous state and await the next press.
+        onRejected: {
+            console.log("[PayloadDrop] DROP cancelled by operator")
+            QGroundControl.eventLogger.logEvent("Payload Drop Cancelled")
+        }
+    }
 
     ColumnLayout {
         id:                 mainColumn
@@ -142,11 +186,15 @@ Rectangle {
             MouseArea {
                 anchors.fill:   parent
                 enabled:        dropButton._dropEnabled
-                // Fire-and-complete silently: the controller sends the non-blocking AUX OUT 11
-                // command and latches dropCompleted. No "Payload Dropped" dialog is shown.
+                // A single press raises a modal confirmation dialog rather than dropping directly.
+                // The actual release is only issued if the operator confirms (dialog onAccepted).
                 onClicked: {
-                    console.log("[PayloadDrop] DROP pressed -> controller.requestDrop() (AUX OUT 11)")
-                    controller.requestDrop()
+                    if (confirmDropDialog.visible) {
+                        return  // A confirmation is already open — never stack multiple dialogs.
+                    }
+                    console.log("[PayloadDrop] DROP pressed -> showing confirmation dialog")
+                    QGroundControl.eventLogger.logEvent("Payload Drop Initiated")
+                    confirmDropDialog.open()
                 }
             }
         }

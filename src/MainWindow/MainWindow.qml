@@ -21,8 +21,23 @@ ApplicationWindow {
     flags:      Qt.Window | (ScreenTools.isAndroid ? Qt.ExpandedClientAreaHint | Qt.NoTitleBarBackgroundHint : 0)
 
     Component.onCompleted: {
-        // Start the sequence of first run prompt(s)
-        firstRunPromptManager.nextPrompt()
+        // Only start the first run prompt(s) once the application is unlocked. While the password
+        // gate is active the prompts wait behind the login overlay; they are started from the
+        // appLockManager.unlockedChanged handler below the instant authentication succeeds.
+        if (QGroundControl.appLockManager.unlocked) {
+            firstRunPromptManager.nextPrompt()
+        }
+    }
+
+    // Kick off the first-run prompt sequence as soon as the operator authenticates (if it was
+    // gated by the login overlay at startup).
+    Connections {
+        target: QGroundControl.appLockManager
+        function onUnlockedChanged() {
+            if (QGroundControl.appLockManager.unlocked && firstRunPromptManager.nextPromptIdIndex === 0) {
+                firstRunPromptManager.nextPrompt()
+            }
+        }
     }
 
     /// Saves main window position and size and re-opens it in the same position and size next time
@@ -694,6 +709,87 @@ ApplicationWindow {
             windowedPage.source = source
         }
         windowedPage.visible = true
+    }
+
+    //-------------------------------------------------------------------------
+    //-- Application lock / login overlay
+    //
+    // Opaque, top-most overlay that locks ALL access to the application until the operator
+    // authenticates. The app starts locked on every launch (AppLockManager.unlocked == false), so
+    // this overlay is shown immediately and hides itself the moment a correct password is entered.
+    // It blocks mouse/wheel input from reaching the UI behind it and holds keyboard focus, so the
+    // main window cannot be operated until authentication succeeds.
+    Rectangle {
+        id:             loginOverlay
+        anchors.fill:   parent
+        z:              100000
+        color:          qgcPal.window
+        visible:        !QGroundControl.appLockManager.unlocked
+        enabled:        visible
+
+        property bool _showError: false
+
+        function _attemptLogin() {
+            if (QGroundControl.appLockManager.tryUnlock(loginPasswordField.text)) {
+                loginOverlay._showError = false
+            } else {
+                loginOverlay._showError = true
+            }
+            loginPasswordField.text = ""
+            if (loginOverlay.visible) {
+                loginPasswordField.forceActiveFocus()
+            }
+        }
+
+        // Swallow every mouse/wheel event so nothing reaches the UI being constructed behind it.
+        MouseArea {
+            anchors.fill:       parent
+            hoverEnabled:       true
+            preventStealing:    true
+            onWheel:            function(wheel) { wheel.accepted = true }
+        }
+
+        onVisibleChanged:       if (visible) loginPasswordField.forceActiveFocus()
+        Component.onCompleted:  if (visible) loginPasswordField.forceActiveFocus()
+
+        ColumnLayout {
+            anchors.centerIn:   parent
+            width:              Math.min(parent.width * 0.8, ScreenTools.defaultFontPixelWidth * 40)
+            spacing:            ScreenTools.defaultFontPixelHeight
+
+            QGCLabel {
+                Layout.alignment:   Qt.AlignHCenter
+                text:               QGroundControl.appName
+                font.pointSize:     ScreenTools.largeFontPointSize
+                font.bold:          true
+            }
+
+            QGCLabel {
+                Layout.alignment:   Qt.AlignHCenter
+                text:               qsTr("Enter password to unlock")
+            }
+
+            QGCTextField {
+                id:                 loginPasswordField
+                Layout.fillWidth:   true
+                echoMode:           TextInput.Password
+                placeholderText:    qsTr("Password")
+                onAccepted:         loginOverlay._attemptLogin()
+            }
+
+            QGCLabel {
+                Layout.alignment:   Qt.AlignHCenter
+                text:               qsTr("Invalid Password")
+                color:              qgcPal.warningText
+                visible:            loginOverlay._showError
+            }
+
+            QGCButton {
+                Layout.alignment:   Qt.AlignHCenter
+                text:               qsTr("Login")
+                onClicked:          loginOverlay._attemptLogin()
+            }
+        }
     }
 
     Component {

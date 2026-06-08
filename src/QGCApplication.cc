@@ -20,6 +20,8 @@
 #include <QtCore/private/qthread_p.h>
 
 #include "LogManager.h"
+#include "AppLockManager.h"
+#include "EventLogger.h"
 #include "AudioOutput.h"
 #include "FollowMe.h"
 #include "JoystickManager.h"
@@ -226,6 +228,12 @@ void QGCApplication::init()
     }
 
     LogManager::instance()->init();
+
+    // Start the asynchronous event-logging subsystem (needs SettingsManager for the log directory)
+    // and seed/verify the application-lock credential. Done here (not in _initForNormalAppBoot) so
+    // both are available to every boot path, including unit tests.
+    EventLogger::instance()->init();
+    AppLockManager::instance()->init();
 
     // Although this should really be in _initForNormalAppBoot putting it here allowws us to create unit tests which pop up more easily
     if (QFontDatabase::addApplicationFont(":/fonts/opensans") < 0) {

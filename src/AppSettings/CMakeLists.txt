@@ -107,6 +107,7 @@ qt_add_qml_module(AppSettingsModule
         PX4LogUploadSettings.qml
         QmlTest.qml
         RemoteIDGpsLocation.qml
+        SecuritySettingsPage.qml
         SerialSettings.qml
         SettingsPage.qml
         TcpSettings.qml

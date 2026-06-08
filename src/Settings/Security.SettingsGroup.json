@@ -1,0 +1,22 @@
+{
+    "version": 1,
+    "fileType": "FactMetaData",
+    "QGC.MetaData.Facts": [
+        {
+            "name": "passwordHash",
+            "shortDesc": "Application lock password hash",
+            "longDesc": "Hex-encoded salted hash of the application-lock password. Never stores the plain-text password.",
+            "type": "string",
+            "default": "",
+            "label": "Password Hash"
+        },
+        {
+            "name": "passwordSalt",
+            "shortDesc": "Application lock password salt",
+            "longDesc": "Hex-encoded random salt used together with the password to derive passwordHash.",
+            "type": "string",
+            "default": "",
+            "label": "Password Salt"
+        }
+    ]
+}

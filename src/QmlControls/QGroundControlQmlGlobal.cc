@@ -1,6 +1,8 @@
 #include "QGroundControlQmlGlobal.h"
 
 #include "QGCCorePlugin.h"
+#include "AppLockManager.h"
+#include "EventLogger.h"
 #include "LinkManager.h"
 #include "MAVLinkProtocol.h"
 #include "FirmwarePluginManager.h"
@@ -49,6 +51,8 @@ QGroundControlQmlGlobal::QGroundControlQmlGlobal(QObject *parent)
     , _linkManager(LinkManager::instance())
     , _multiVehicleManager(MultiVehicleManager::instance())
     , _settingsManager(SettingsManager::instance())
+    , _appLockManager(AppLockManager::instance())
+    , _eventLogger(EventLogger::instance())
     , _corePlugin(QGCCorePlugin::instance())
     , _globalPalette(new QGCPalette(this))
 #ifndef QGC_NO_SERIAL_LINK
