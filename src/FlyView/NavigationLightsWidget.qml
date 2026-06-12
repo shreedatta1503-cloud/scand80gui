@@ -111,17 +111,6 @@ Rectangle {
         root._navPwm = -1
     }
 
-    // Log every ACTUAL navigation-light state change to the asynchronous event logger. Driven by the
-    // observed-PWM-derived _isOn, so it records real state transitions (operator toggles and any
-    // external changes alike). Guarded on a real reading (_navPwm >= 0) so the initial unknown→OFF
-    // default and the -1 reset on vehicle change do not generate spurious entries.
-    on_IsOnChanged: {
-        if (root._navPwm >= 0) {
-            QGroundControl.eventLogger.logEvent(root._isOn ? "Navigation Lights ON"
-                                                           : "Navigation Lights OFF")
-        }
-    }
-
     // Click-protection / failure fallback: if no confirming PWM arrives in time, re-enable the
     // button and log it. The visual state is left exactly as the hardware last reported (no popup,
     // no optimistic update), satisfying the "UI always reflects actual output" requirement.

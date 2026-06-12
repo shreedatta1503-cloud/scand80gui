@@ -92,7 +92,6 @@ Rectangle {
         }
 
         // YES: close and continue the EXISTING drop execution sequence exactly as before.
-        // controller.requestDrop() logs the "Confirmed" event and (on its worker) "Executed".
         onAccepted: {
             console.log("[PayloadDrop] DROP confirmed -> controller.requestDrop() (AUX OUT 11)")
             controller.requestDrop()
@@ -100,7 +99,6 @@ Rectangle {
         // NO: close immediately, command nothing, return to the previous state and await the next press.
         onRejected: {
             console.log("[PayloadDrop] DROP cancelled by operator")
-            QGroundControl.eventLogger.logEvent("Payload Drop Cancelled")
         }
     }
 
@@ -193,7 +191,6 @@ Rectangle {
                         return  // A confirmation is already open — never stack multiple dialogs.
                     }
                     console.log("[PayloadDrop] DROP pressed -> showing confirmation dialog")
-                    QGroundControl.eventLogger.logEvent("Payload Drop Initiated")
                     confirmDropDialog.open()
                 }
             }

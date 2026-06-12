@@ -31,11 +31,6 @@
             "divider": true
         },
         {
-            "name": "Security",
-            "qml": "SecuritySettingsPage.qml",
-            "icon": "qrc:/InstrumentValueIcons/lock-closed.svg"
-        },
-        {
             "name": "ADSB Server",
             "qml": "ADSBServerSettings.qml",
             "icon": "qrc:/InstrumentValueIcons/airplane.svg",

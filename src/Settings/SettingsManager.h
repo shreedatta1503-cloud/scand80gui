@@ -21,7 +21,6 @@ class OfflineMapsSettings;
 class PlanViewSettings;
 class RemoteIDSettings;
 class RTKSettings;
-class SecuritySettings;
 class UnitsSettings;
 class NTRIPSettings;
 class VideoSettings;
@@ -56,7 +55,6 @@ class SettingsManager : public QObject
     Q_MOC_INCLUDE("PlanViewSettings.h")
     Q_MOC_INCLUDE("RemoteIDSettings.h")
     Q_MOC_INCLUDE("RTKSettings.h")
-    Q_MOC_INCLUDE("SecuritySettings.h")
     Q_MOC_INCLUDE("UnitsSettings.h")
     Q_MOC_INCLUDE("NTRIPSettings.h")
     Q_MOC_INCLUDE("VideoSettings.h")
@@ -82,7 +80,6 @@ class SettingsManager : public QObject
     Q_PROPERTY(QObject *planViewSettings                READ planViewSettings               CONSTANT)
     Q_PROPERTY(QObject *remoteIDSettings                READ remoteIDSettings               CONSTANT)
     Q_PROPERTY(QObject *rtkSettings                     READ rtkSettings                    CONSTANT)
-    Q_PROPERTY(QObject *securitySettings                READ securitySettings               CONSTANT)
     Q_PROPERTY(QObject *unitsSettings                   READ unitsSettings                  CONSTANT)
     Q_PROPERTY(QObject *ntripSettings                   READ ntripSettings                  CONSTANT)
     Q_PROPERTY(QObject *videoSettings                   READ videoSettings                  CONSTANT)
@@ -122,7 +119,6 @@ public:
     PlanViewSettings *planViewSettings() const;
     RemoteIDSettings *remoteIDSettings() const;
     RTKSettings *rtkSettings() const;
-    SecuritySettings *securitySettings() const;
     UnitsSettings *unitsSettings() const;
     NTRIPSettings *ntripSettings() const;
     VideoSettings *videoSettings() const;
@@ -152,7 +148,6 @@ private:
     PlanViewSettings *_planViewSettings = nullptr;
     RemoteIDSettings *_remoteIDSettings = nullptr;
     RTKSettings *_rtkSettings = nullptr;
-    SecuritySettings *_securitySettings = nullptr;
     UnitsSettings *_unitsSettings = nullptr;
     NTRIPSettings *_ntripSettings = nullptr;
     VideoSettings *_videoSettings = nullptr;

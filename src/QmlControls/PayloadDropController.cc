@@ -9,7 +9,6 @@
 
 #include "PayloadDropController.h"
 
-#include "EventLogger.h"
 #include "QGCLoggingCategory.h"
 #include "Vehicle.h"
 
@@ -133,9 +132,7 @@ void PayloadDropController::requestPinRelease()
 void PayloadDropController::requestDrop()
 {
     // The operator confirmed the drop in the QML confirmation dialog; this is the point the release
-    // command is actually issued. Log it (async, non-blocking) as the "Confirmed" event.
-    EventLogger::instance()->logEvent(QStringLiteral("Payload Drop Confirmed"));
-
+    // command is actually issued.
     if (_vehicle) {
         _vehicle->sendPayloadDrop();    // Non-blocking MAVLink send (AUX OUT 11)
     }
@@ -250,9 +247,6 @@ void PayloadDropWorker::onUserRequestedDrop()
     }
     _dropCompleted = true;
     qCDebug(PayloadDropControllerLog) << "DROP completed (AUX OUT 11 fired) — completing silently";
-    // The release has been latched/executed. Log it (async; logEvent is thread-safe so calling it
-    // from this worker thread is fine) as the "Executed" event.
-    EventLogger::instance()->logEvent(QStringLiteral("Payload Drop Executed"));
     emit dropCompletedChanged(true);
 
     // Telemetry/audit record: format and log it on the global thread pool (a separate core) so it

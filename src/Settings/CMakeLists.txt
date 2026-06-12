@@ -41,8 +41,6 @@ target_sources(${CMAKE_PROJECT_NAME}
         RemoteIDSettings.h
         RTKSettings.cc
         RTKSettings.h
-        SecuritySettings.cc
-        SecuritySettings.h
         NTRIPSettings.cc
         NTRIPSettings.h
         SettingsGroup.cc
