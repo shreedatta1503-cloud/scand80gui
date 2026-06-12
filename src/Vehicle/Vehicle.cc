@@ -3217,7 +3217,7 @@ void Vehicle::sendNavigationLights(int pwmUs)
     // (SERVO13_TRIM, ~2200us) = light OFF, and the light is energised by pulling the channel LOW.
     // The widget is the single source of truth for the rail values and passes the literal target
     // microseconds; we only validate the range here (DO_SET_SERVO writes the literal pulse width).
-    const int channel  = 13;        // AUX OUT 13 == SERVO13 (plain local so it can be lambda-captured)
+    const int channel  = 13;        // AUX OUT 13 == SERVO13 (compile-time constant; usable in the deferred lambda without capture)
     const int kMinPwmUs = 800;
     const int kMaxPwmUs = 2200;
 
@@ -3246,7 +3246,7 @@ void Vehicle::sendNavigationLights(int pwmUs)
     Fact *const functionFact = _parameterManager->getParameter(
             ParameterManager::defaultComponentId, QStringLiteral("SERVO%1_FUNCTION").arg(channel));
     connect(functionFact, &Fact::vehicleUpdated, this,
-            [this, channel, clamped](const QVariant &) { _commandNavigationLightsServo(channel, clamped); },
+            [this, clamped](const QVariant &) { _commandNavigationLightsServo(channel, clamped); },
             Qt::SingleShotConnection);
 }
 
