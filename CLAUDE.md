@@ -17,7 +17,9 @@ This repo is **`shreedatta1503-cloud/scand80gui`** — a true GitHub fork of `ma
 
 **Branches:**
 - `master` — kept pristine-equal to upstream `mavlink/qgroundcontrol` master; used only for syncing. Do not commit features here.
-- `scand80-dev` — **active development branch.** All fork work lives here.
+- `scand80-dev` — long-running development branch; the Windows installers up to `1d825a136` (2026-06-05) were built from here.
+- `feature/payload-confirm-applock-eventlog` — `scand80-dev` + one commit (`7594aec0b`, 2026-06-08) adding payload-drop confirmation, an app password-lock, and async event logging. **Only ever built into an APK, never an installer.**
+- `feature/remove-applock-eventlog` — **current state of the shipped artifacts.** Branched off the above; removed the app-lock + event-log features (kept payload-drop confirmation + nav lights). Both `/root/QGroundControl.apk` and `/root/QGroundControl-installer.exe` are built from its HEAD (`dbb32ca19`, 2026-06-12). See the dated entry under "Windows builds" below.
 - `payload-drop` — legacy branch with an earlier, different payload implementation (a 6-servo radial widget driven by `DO_SET_SERVO`). Superseded by the widget on `scand80-dev`; kept for reference.
 
 Git identity in this clone: `shreedatta1503-cloud`. Push/pull is pre-authorized (a classic PAT with `repo`+`workflow` scopes is stored in `~/.git-credentials`; `workflow` scope is required to push `.github/workflows/**`).
@@ -248,6 +250,54 @@ Three options, in order of convenience:
    `cmake --build build`.
 
 Toolchain pins (from `build-config.json`): Qt **6.10.3** (min 6.10.0), CMake **3.25+**, MSVC 2022 on Windows.
+
+### ✅ Done — app-lock + event-log REMOVED; APK and installer rebuilt & swapped (2026-06-12)
+
+The application password-lock and the asynchronous event-logging subsystem (both added 2026-06-08 in
+commit `7594aec0b` on `feature/payload-confirm-applock-eventlog`, alongside the payload-drop
+confirmation dialog) were **removed in full** on branch `feature/remove-applock-eventlog`. The
+payload-drop confirmation dialog, the Payload Drop widget/worker-thread model, and the Navigation
+Lights widget are **kept**.
+
+**Why this entry matters:** the app-lock/event-log code only ever shipped in an **APK** (the
+2026-06-04 / 2026-06-12 builds). No installer ever contained it — the prior `.exe` was built from
+`scand80-dev @ 1d825a136`, which predates `7594aec0b`. So "remove it from the .exe" was already true;
+this session rebuilt the installer from the cleaned source so the `.exe` and `.apk` carry an **identical
+feature set** (payload-drop confirmation + nav lights, no app-lock/event-log).
+
+**What was removed (commit `dbb32ca19`):** 10 files deleted — `src/Security/{AppLockManager.{cc,h},
+CMakeLists.txt}`, `src/EventLog/{EventLogger.{cc,h},CMakeLists.txt}`, `src/Settings/{SecuritySettings.
+{cc,h},Security.SettingsGroup.json}`, `src/AppSettings/SecuritySettingsPage.qml`; de-integrated from
+`src/CMakeLists.txt`, `Settings`/`AppSettings` CMakeLists, `SettingsPages.json`, `QGCApplication.cc`,
+`QGroundControlQmlGlobal.{cc,h}`, `SettingsManager.{cc,h}`, `MainWindow.qml` (login overlay + unlock
+gate), `PayloadDropController.cc`, `PayloadDropWidget.qml`, `NavigationLightsWidget.qml`. Net −958 lines.
+
+**Android `-Werror` fix carried on the same branch (commit `5321c29ac`):** the Android NDK r27c **Clang**
+rejects `-Wunused-lambda-capture` on the deferred `Fact::vehicleUpdated` lambda in
+`Vehicle::sendNavigationLights()` — `channel` is a `const int` constant usable inside the nested lambda
+without capture. Desktop **GCC** has no such warning (hence the local `-Werror` build always passed),
+so this only surfaced when building for Android. Dropping the capture is behaviour-preserving on both
+compilers; **required for any Android build of this branch.**
+
+**Artifacts (both from `dbb32ca19`):**
+- **APK** — `/root/QGroundControl.apk`, signed Release arm64-v8a, minSdk 29, sha `b28a8856…`. Verified:
+  `AppLockManager`/`EventLogger`/`SecuritySettings` = 0 symbols in `libQGroundControl_arm64-v8a.so`;
+  `PayloadDropController`/`sendPayloadDrop`/`sendNavigationLights` present; `apksigner` v3 → *Verifies*.
+- **Installer** — `/root/QGroundControl-installer.exe`, sha `4342e131…`, NSIS `7z t` → *Everything is Ok*.
+  Built via `build-windows-exe.yml` run [`27416577329`](https://github.com/shreedatta1503-cloud/scand80gui/actions/runs/27416577329)
+  (success, ~38 min); artifact `QGroundControl-Windows-Release` (id `7592598060`) fetched with the 32-way
+  parallel ranged download; picked `QGroundControl-installer-AMD64.exe`. Bundled `QGroundControlApp.exe`
+  symbol check: app-lock/event-log = 0, `PayloadDropController`/`sendPayloadDrop` present (so the `.exe`
+  now also has the payload-drop confirmation, matching the APK). Previous installer backed up to
+  **`/root/QGroundControl-installer.exe.prev-20260612-de822460`**.
+
+**Runtime verification (the meaningful "does it run" test):** the `.apk` (Android arm64) and `.exe`
+(Windows PE) **cannot be executed on this headless x86-64 Linux box** (no device/emulator/qemu, no
+Wine). Instead the **same source** was built as the native Linux Release binary and launched headless as
+`qgcuser` on `:99` → **healthy: ~86 threads, ~342 MB RSS, reached `QML ready`, zero QML/runtime errors**
+(specifically no dangling references to the removed `appLockManager`/`eventLogger`/`securitySettings`
+QML properties — the exact failure mode a bad removal would cause). The usual GStreamer/speechd/pipewire
+log lines are non-fatal in this env. **Not yet PR'd/merged into `scand80-dev`.**
 
 ### ✅ Done — installer rebuilt & swapped for Nav Lights ON-blink part-2 fix (2026-06-05, later)
 
