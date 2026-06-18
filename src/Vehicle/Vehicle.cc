@@ -542,6 +542,38 @@ void Vehicle::_mavlinkMessageReceived(LinkInterface* link, mavlink_message_t mes
     case MAVLINK_MSG_ID_RC_CHANNELS:
         _handleRCChannels(message);
         break;
+    case MAVLINK_MSG_ID_SERVO_OUTPUT_RAW:
+    {
+        mavlink_servo_output_raw_t servoOutputRaw;
+        mavlink_msg_servo_output_raw_decode(&message, &servoOutputRaw);
+
+        // ArduPilot commonly publishes servo1_raw..servo16_raw in a single packet (port may remain 0).
+        const uint16_t rawValues[16] = {
+            servoOutputRaw.servo1_raw,
+            servoOutputRaw.servo2_raw,
+            servoOutputRaw.servo3_raw,
+            servoOutputRaw.servo4_raw,
+            servoOutputRaw.servo5_raw,
+            servoOutputRaw.servo6_raw,
+            servoOutputRaw.servo7_raw,
+            servoOutputRaw.servo8_raw,
+            servoOutputRaw.servo9_raw,
+            servoOutputRaw.servo10_raw,
+            servoOutputRaw.servo11_raw,
+            servoOutputRaw.servo12_raw,
+            servoOutputRaw.servo13_raw,
+            servoOutputRaw.servo14_raw,
+            servoOutputRaw.servo15_raw,
+            servoOutputRaw.servo16_raw
+        };
+
+        for (int servoIndex = 0; servoIndex < _servoOutputRawValues.size() && servoIndex < 16; servoIndex++) {
+            _servoOutputRawValues[servoIndex] = (rawValues[servoIndex] == UINT16_MAX) ? -1 : static_cast<int>(rawValues[servoIndex]);
+        }
+
+        emit servoOutputsChanged(_servoOutputRawValues);
+    }
+        break;
     case MAVLINK_MSG_ID_BATTERY_STATUS:
         _handleBatteryStatus(message);
         break;
@@ -1479,6 +1511,37 @@ void Vehicle::_handleRCChannels(mavlink_message_t& message)
         } else {
             pwmValues[i] = -1;
         }
+    }
+
+    // ---- Payload Drop trigger: RC Channel 9 (index 8) ----
+    // Read Ch9 from the *raw* value (chan9_raw), not from the truncated pwmValues built above (which
+    // is -1 for any channel index >= chancount). The dedicated rc9TriggerChanged signal carries Ch9
+    // independently so PayloadDropWidget reveals reliably whenever Ch9 is actually present.
+    //
+    // Both transitions are also surfaced once via a user-visible app message: the console traces are
+    // invisible in the in-app message panel. The most common real cause of "widget never appears" is a
+    // transmitter/receiver carrying <9 channels (Ch9 == UINT16_MAX).
+    const uint16_t rc9Raw = *_rgChannelvalues[8];
+    const bool rc9Present = (rc9Raw != UINT16_MAX);
+    if (rc9Present) {
+        const int rc9 = static_cast<int>(rc9Raw);
+        if (rc9 != _lastRc9RawValue) {
+            if (_lastRc9RawValue == -1) {
+                qgcApp()->showAppMessage(tr("Payload Drop: RC channel 9 detected (%1 us). Move Ch9 to reveal the widget.").arg(rc9));
+            }
+            qCDebug(VehicleLog) << "RC9 (payload trigger) value changed:" << _lastRc9RawValue << "->" << rc9 << "us";
+            _lastRc9RawValue = rc9;
+            _rc9AbsentLogged = false;
+            emit rc9TriggerChanged(rc9);
+        }
+    } else if (!_rc9AbsentLogged) {
+        qCDebug(VehicleLog) << "RC9 (payload trigger) absent from RC_CHANNELS; PayloadDropWidget will stay hidden";
+        qgcApp()->showAppMessage(tr("Payload Drop: RC channel 9 is not present in the RC stream, so the widget "
+                               "cannot appear. Ensure your transmitter/receiver sends at least 9 channels "
+                               "(e.g. SBUS 16-channel mode) and that Ch9 is assigned."));
+        _rc9AbsentLogged = true;
+        _lastRc9RawValue = -1;
+        emit rc9TriggerChanged(-1);
     }
 
     emit remoteControlRSSIChanged(channels.rssi);
@@ -3953,9 +4016,144 @@ void Vehicle::sendGripperAction(QGCMAVLink::GRIPPER_OPTIONS gripperOption)
         case QGCMAVLink::Invalid_option:
             qDebug("unknown function");
             break;
-        default: 
+        default:
             break;
     }
+}
+
+void Vehicle::sendPayloadPinRelease()
+{
+    // AUX OUT 9 drives the linear actuator that removes the payload retaining pin.
+    // On ArduPilot, AUX OUT n maps to SERVOn, so the DO_SET_SERVO instance is the channel number.
+    static constexpr float kPinActuatorServo = 9.0f;    // AUX OUT 9
+    static constexpr float kReleasePwmUs     = 2000.0f; // Drive actuator to the release end-stop
+
+    sendMavCommand(
+            _defaultComponentId,
+            MAV_CMD_DO_SET_SERVO,
+            true,                   // Show errors
+            kPinActuatorServo,      // Param1: Servo instance (AUX OUT 9)
+            kReleasePwmUs);         // Param2: PWM (us)
+}
+
+void Vehicle::sendPayloadDrop()
+{
+    // AUX OUT 11 drives the payload-release servo.
+    static constexpr float kReleaseServo = 11.0f;   // AUX OUT 11
+    static constexpr float kReleasePwmUs = 2000.0f; // Drive servo to the release position
+
+    sendMavCommand(
+            _defaultComponentId,
+            MAV_CMD_DO_SET_SERVO,
+            true,                   // Show errors
+            kReleaseServo,          // Param1: Servo instance (AUX OUT 11)
+            kReleasePwmUs);         // Param2: PWM (us)
+}
+
+void Vehicle::sendNavigationLights(int pwmUs)
+{
+    // AUX OUT 13 drives the navigation-lights output. On ArduPilot, AUX OUT n maps to SERVOn,
+    // so the DO_SET_SERVO instance is the channel number. The resulting PWM is observed back
+    // through SERVO_OUTPUT_RAW (servoOutputsChanged, SERVO13 == index 12); the UI updates only
+    // from that feedback, never from the act of sending this command.
+    //
+    // The output is ACTIVE-LOW: the channel's idle/disarm/failsafe state is the HIGH rail
+    // (SERVO13_TRIM, ~2200us) = light OFF, and the light is energised by pulling the channel LOW.
+    // The widget is the single source of truth for the rail values and passes the literal target
+    // microseconds; we only validate the range here (DO_SET_SERVO writes the literal pulse width).
+    const int channel  = 13;        // AUX OUT 13 == SERVO13
+    const int kMinPwmUs = 800;
+    const int kMaxPwmUs = 2200;
+
+    const int clamped = qBound(kMinPwmUs, pwmUs, kMaxPwmUs);
+    if (clamped != pwmUs) {
+        qCWarning(VehicleLog) << "sendNavigationLights: PWM" << pwmUs << "out of range, clamped to" << clamped;
+    }
+
+    // A one-shot DO_SET_SERVO only latches on a channel the autopilot is not otherwise driving.
+    // SERVO13_FUNCTION is REBOOT-REQUIRED and the param write is asynchronous, so we must not assume a
+    // mid-session write disables the channel before this command lands. _ensureNavigationLightsChannelLatches()
+    // returns whether the channel is latchable right now: if so we command immediately; if it had to write
+    // SERVO13_FUNCTION=0 over an assigned function, we DEFER the command until the vehicle confirms that write.
+    if (_ensureNavigationLightsChannelLatches(channel)) {
+        _commandNavigationLightsServo(channel, clamped);
+        return;
+    }
+
+    Fact *const functionFact = _parameterManager->getParameter(
+            ParameterManager::defaultComponentId, QStringLiteral("SERVO%1_FUNCTION").arg(channel));
+    connect(functionFact, &Fact::vehicleUpdated, this,
+            [this, channel, clamped](const QVariant &) { _commandNavigationLightsServo(channel, clamped); },
+            Qt::SingleShotConnection);
+}
+
+void Vehicle::_commandNavigationLightsServo(int channel, int pwmUs)
+{
+    sendMavCommand(
+            _defaultComponentId,
+            MAV_CMD_DO_SET_SERVO,
+            false,                              // Show errors: failures are logged, never popped up
+            static_cast<float>(channel),        // Param1: Servo instance (AUX OUT 13)
+            static_cast<float>(pwmUs));          // Param2: PWM (us)
+}
+
+bool Vehicle::_ensureNavigationLightsChannelLatches(int channel)
+{
+    // DO_SET_SERVO is non-latching: it holds steady only on a channel with SERVOn_FUNCTION=0 (Disabled).
+    // Any other value hands the channel to the autopilot, which re-drives it every output loop and
+    // contends with the override. We pin SERVO<channel>_REVERSED to 0 and SERVO<channel>_FUNCTION to 0.
+    // Writes are idempotent and every override is warned (audit trail).
+    if (!_parameterManager || !_parameterManager->parametersReady()) {
+        qCWarning(VehicleLog) << "Navigation lights: parameters not ready; commanding AUX" << channel
+                              << "directly -- ON may blink until SERVO" << channel << "_FUNCTION is Disabled(0).";
+        return true;    // nothing better is possible; let the caller command now
+    }
+
+    const int compId = ParameterManager::defaultComponentId;
+
+    const QString reversedParam = QStringLiteral("SERVO%1_REVERSED").arg(channel);
+    if (_parameterManager->parameterExists(compId, reversedParam)) {
+        Fact *const reversedFact = _parameterManager->getParameter(compId, reversedParam);
+        if (reversedFact->rawValue().toInt() != 0) {
+            qCWarning(VehicleLog) << "Navigation lights: overriding" << reversedParam
+                                  << "to 0 (un-reversed) so the commanded active-low PWM is applied deterministically.";
+            reversedFact->setRawValue(0);
+        }
+    }
+
+    // Verify-only: the disarm/failsafe idle is SERVO_TRIM, which must sit on the OFF (HIGH) rail.
+    const QString trimParam = QStringLiteral("SERVO%1_TRIM").arg(channel);
+    if (_parameterManager->parameterExists(compId, trimParam)) {
+        const int trim = _parameterManager->getParameter(compId, trimParam)->rawValue().toInt();
+        if (trim < 1500) {
+            qCWarning(VehicleLog) << "Navigation lights:" << trimParam << "=" << trim
+                                  << "is on the ON/LOW rail -- disarm/failsafe will energise the lamp."
+                                  << "Expected the HIGH/OFF rail (~2200us).";
+        }
+    }
+
+    // SERVO<channel>_FUNCTION is the actual blink lever.
+    const QString functionParam = QStringLiteral("SERVO%1_FUNCTION").arg(channel);
+    if (!_parameterManager->parameterExists(compId, functionParam)) {
+        qCWarning(VehicleLog) << "Navigation lights:" << functionParam
+                              << "not found; cannot guarantee a steady (non-blinking) output. Commanding anyway.";
+        return true;
+    }
+
+    Fact *const functionFact = _parameterManager->getParameter(compId, functionParam);
+    const int current = functionFact->rawValue().toInt();
+    if (current == 0) {
+        return true;    // already Disabled -- the override latches; safe to command immediately
+    }
+
+    // current != 0: the autopilot is actively driving AUX<channel>. SERVOn_FUNCTION is RebootRequired,
+    // so persist the write and defer the servo command until the write is confirmed.
+    qCWarning(VehicleLog) << "Navigation lights:" << functionParam << "=" << current
+                          << "-- the autopilot is driving AUX" << channel << "(the ON-state blink source)."
+                          << "Writing it to 0 (Disabled);" << functionParam
+                          << "is REBOOT-REQUIRED. Deferring DO_SET_SERVO until the write is confirmed.";
+    functionFact->setRawValue(0);
+    return false;
 }
 
 void Vehicle::setEstimatorOrigin(const QGeoCoordinate& centerCoord)
@@ -4289,6 +4487,14 @@ void Vehicle::_textMessageReceived(MAV_COMPONENT componentid, MAV_SEVERITY sever
     // PX4 backwards compatibility: messages sent out ending with a tab are also sent as event
     if (px4Firmware() && text.endsWith('\t')) {
         qCDebug(VehicleLog) << "Dropping message (expected as event):" << text;
+        return;
+    }
+
+    // ArduPilot emits a DEBUG-severity "RCInput: decoding SBUS(n)" STATUSTEXT every time it (re)locks
+    // onto the SBUS RC protocol. It carries no actionable information yet repeats constantly and floods
+    // the in-app Messages panel during normal flight. Drop it so it never reaches the panel or speech.
+    if ((severity == MAV_SEVERITY::MAV_SEVERITY_DEBUG) && text.startsWith(QStringLiteral("RCInput: decoding SBUS"))) {
+        qCDebug(VehicleLog) << "Dropping noisy ArduPilot SBUS decode message:" << text;
         return;
     }
 

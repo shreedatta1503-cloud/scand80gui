@@ -42,4 +42,25 @@ ColumnLayout {
             }
         }
     }
+
+    // Navigation Lights widget. Always visible (never gated on vehicle state) and placed
+    // directly above the Payload Drop widget. Acts as a status indicator + toggle for AUX OUT 13.
+    NavigationLightsWidget {
+        Layout.alignment: Qt.AlignRight
+    }
+
+    // Payload Drop widget. Self-managing: hidden until RC Channel 9 activity is detected,
+    // hides again after a successful drop. Loaded only when a vehicle is connected.
+    Loader {
+        id:                 payloadDropLoader
+        Layout.alignment:   Qt.AlignRight
+        sourceComponent:    globals.activeVehicle ? payloadDropComponent : undefined
+
+        Component {
+            id: payloadDropComponent
+
+            PayloadDropWidget {
+            }
+        }
+    }
 }

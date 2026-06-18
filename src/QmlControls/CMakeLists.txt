@@ -55,6 +55,8 @@ target_sources(${CMAKE_PROJECT_NAME}
         ToolStripAction.h
         ToolStripActionList.cc
         ToolStripActionList.h
+        PayloadDropController.cc
+        PayloadDropController.h
 )
 
 target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})

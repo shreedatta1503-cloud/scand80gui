@@ -43,10 +43,12 @@ qt_add_qml_module(FlightDisplayModule
         GuidedValueSlider.qml
         MultiRotorChecklist.qml
         MultiVehicleList.qml
+        NavigationLightsWidget.qml
         ObstacleDistanceOverlay.qml
         ObstacleDistanceOverlayMap.qml
         ObstacleDistanceOverlayVideo.qml
         OnScreenGimbalController.qml
+        PayloadDropWidget.qml
         PreFlightBatteryCheck.qml
         PreFlightCheckList.qml
         PreFlightCheckListShowAction.qml

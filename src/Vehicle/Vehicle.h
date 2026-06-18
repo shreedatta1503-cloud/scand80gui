@@ -488,6 +488,17 @@ public:
 
     void setGripperAction(GRIPPER_ACTIONS gripperAction);
     Q_INVOKABLE void sendGripperAction(QGCMAVLink::GRIPPER_OPTIONS gripperOption);
+    /// Drives the payload pin-release linear actuator (AUX OUT 9) via MAV_CMD_DO_SET_SERVO.
+    Q_INVOKABLE void sendPayloadPinRelease();
+    /// Drives the payload-release servo (AUX OUT 11) via MAV_CMD_DO_SET_SERVO.
+    Q_INVOKABLE void sendPayloadDrop();
+    /// Commands the navigation-lights output (AUX OUT 13) to an explicit PWM via MAV_CMD_DO_SET_SERVO.
+    /// The output is ACTIVE-LOW: the channel idles HIGH (SERVO13_TRIM, ~2200us) = light OFF, and is
+    /// pulled LOW to energise the light. The widget owns the rail values and passes the literal
+    /// microseconds here, so the commanded value has a single source of truth (no duplicated
+    /// constants). Out-of-range values are clamped and warned. The actual state is observed back
+    /// through servoOutputsChanged (SERVO13 / index 12); this only commands it.
+    Q_INVOKABLE void sendNavigationLights(int pwmUs);
 
     void pairRX(int rxType, int rxSubType);
 
@@ -890,6 +901,15 @@ signals:
     /// Remote control RSSI changed  (0% - 100%)
     void remoteControlRSSIChanged       (uint8_t rssi);
 
+    /// Payload Drop trigger: RC Channel 9 (index 8) PWM, read directly from the raw RC_CHANNELS
+    /// values. This lets PayloadDropWidget react to Ch9 independently of the published channel array.
+    ///     @param pwm Ch9 PWM in microseconds, or -1 when Ch9 is not present in the RC stream.
+    void rc9TriggerChanged              (int pwm);
+
+    /// New SERVO output values coming from SERVO_OUTPUT_RAW message.
+    ///     @param servoValues Indexed 0..15 -> SERVO1..SERVO16, microseconds (-1 == not present)
+    void servoOutputsChanged            (QVector<int> servoValues);
+
     // Mavlink Log Download
     void mavlinkLogData                 (Vehicle* vehicle, uint8_t target_system, uint8_t target_component, uint16_t sequence, uint8_t first_message, QByteArray data, bool acked);
 
@@ -982,6 +1002,14 @@ private:
     void _geoFenceManagerError          (int errorCode, const QString& errorMsg);
     void _rallyPointManagerError        (int errorCode, const QString& errorMsg);
     void _say                           (const QString& text);
+    /// Brings the navigation-lights output channel (AUX OUT @a channel == SERVO@a channel) to a
+    /// configuration on which a one-shot MAV_CMD_DO_SET_SERVO actually latches (SERVO<n>_FUNCTION=0,
+    /// SERVO<n>_REVERSED=0). @return true if the channel is already latchable now and the caller may
+    /// command immediately; false when it had to write SERVO<n>_FUNCTION=0 (reboot-required, async),
+    /// so the caller must DEFER DO_SET_SERVO until the write is confirmed.
+    bool _ensureNavigationLightsChannelLatches(int channel);
+    /// Issues the one-shot MAV_CMD_DO_SET_SERVO(@a channel, @a pwmUs) for the navigation-lights output.
+    void _commandNavigationLightsServo  (int channel, int pwmUs);
     QString _vehicleIdSpeech            ();
     void _handleMavlinkLoggingData      (mavlink_message_t& message);
     void _handleMavlinkLoggingDataAcked (mavlink_message_t& message);
@@ -1003,6 +1031,13 @@ private:
 
     int     _id;                    ///< Mavlink system id
     int     _defaultComponentId;
+
+    // Live SERVO_OUTPUT_RAW values (microseconds). Indexed 0..15 -> SERVO1..SERVO16.
+    QVector<int>                       _servoOutputRawValues = QVector<int>(16, -1);
+    // Last raw RC Channel 9 (index 8) value published, used to trace Payload Drop trigger activity.
+    int                                _lastRc9RawValue = -1;
+    // Edge-trigger for the "RC9 absent from the RC stream" diagnostic (log/notify once, not per packet).
+    bool                               _rc9AbsentLogged = false;
     bool    _offlineEditingVehicle = false; ///< true: This Vehicle is a "disconnected" vehicle for ui use while offline editing
 
     MAV_AUTOPILOT       _firmwareType;
