@@ -28,6 +28,10 @@ target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE ${CMAKE_CURRENT_SOURCE_
 CPMAddPackage(
     NAME px4-gpsdrivers
     GITHUB_REPOSITORY PX4/PX4-GPSDrivers
+    # Pinned by upstream Stable_V5.0 ("GPS: Set Drivers to Specific Commit", 2025-12-17).
+    # This commit predates the 2026-06 GPSDriverUBX `Settings`-arg change (#213) and is
+    # compatible with GPSProvider.cc's 5-arg call site, so the fork's earlier workaround
+    # pin (0b96958) is superseded by this upstream stable pin.
     GIT_TAG caf5158061bd10e79c9f042abb62c86bc6f3e7a7
     SOURCE_SUBDIR src
 )

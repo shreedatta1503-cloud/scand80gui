@@ -4082,8 +4082,10 @@ void Vehicle::sendNavigationLights(int pwmUs)
 
     Fact *const functionFact = _parameterManager->getParameter(
             ParameterManager::defaultComponentId, QStringLiteral("SERVO%1_FUNCTION").arg(channel));
+    // `channel` is a const-int constant expression, usable inside the lambda without
+    // capture; capturing it explicitly trips -Wunused-lambda-capture on Android Clang.
     connect(functionFact, &Fact::vehicleUpdated, this,
-            [this, channel, clamped](const QVariant &) { _commandNavigationLightsServo(channel, clamped); },
+            [this, clamped](const QVariant &) { _commandNavigationLightsServo(channel, clamped); },
             Qt::SingleShotConnection);
 }
 

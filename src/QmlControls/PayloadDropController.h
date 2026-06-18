@@ -15,7 +15,11 @@
 #include <QtCore/QVector>
 #include <QtQmlIntegration/QtQmlIntegration>
 
-class Vehicle;
+// Vehicle.h (not just a forward declaration): the QML_ELEMENT type registration
+// generated for this controller needs Vehicle to be a complete, QObject-derived
+// type to register the `Q_PROPERTY(Vehicle *vehicle)` and QPointer<Vehicle> cast.
+#include "Vehicle.h"
+
 class PayloadDropWorker;
 
 /// Backend state-manager + RC-channel monitor for the Fly View Payload Drop widget.
