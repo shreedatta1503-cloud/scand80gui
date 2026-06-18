@@ -93,7 +93,7 @@ jobs:
         run: ${{ env.QT_ROOT_DIR }}/bin/qt-cmake -S ${{ github.workspace }} -B . -G Ninja
               -DCMAKE_BUILD_TYPE=${{ inputs.build_type }}
               -DQT_HOST_PATH="${{ env.QT_ROOT_DIR }}/../msvc2022_64"
-              -DQGC_STABLE_BUILD=${{ github.ref_type == 'tag' || contains(github.ref, 'Stable') && 'ON' || 'OFF' }}
+              -DQGC_STABLE_BUILD=ON
               -DQGC_ENABLE_GST_VIDEOSTREAMING=${{ inputs.enable_video && 'ON' || 'OFF' }}
               -DQGC_WINDOWS_BOOTSTRAP=${{ inputs.enable_bootstrap && 'ON' || 'OFF' }}
 

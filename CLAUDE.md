@@ -316,6 +316,27 @@ a downloadable `QGroundControl-installer.exe` artifact, with `QGC_WINDOWS_BOOTST
   checkout fails identically on this box. Validation therefore rests at the build/artifact level above.
 - **Not yet pushed / PR'd.** Branch `upgrade/v5.0.8-stable` is local for review.
 
+### ✅ Done — fixed "QGroundControl Daily" branding → stable release branding (2026-06-18)
+
+The v5.0.8 re‑base (above) produced correct *code*, but the app still launched titled **"QGroundControl
+Daily"**. Root cause was **not** a migration defect — it is the `QGC_STABLE_BUILD` CMake option (default
+**OFF** in `cmake/CustomOptions.cmake`). When OFF, `CMakeLists.txt` (the `target_compile_definitions`
+block) defines `QGC_DAILY_BUILD`, and `src/QGCApplication.cc` sets `applicationName = "<QGC_APP_NAME>
+Daily"` (also a separate settings space + the in‑app new‑version check). Upstream CI only flips it ON for
+tag/`Stable` builds; our `build_android.sh` never passed it, so every artifact was branded Daily.
+
+**Fix (config only — no app source touched, fully upstream‑idiomatic):**
+- `build_android.sh` / `build_android.bat` — new `QGC_STABLE_BUILD` var (default **ON**) passed as
+  `-DQGC_STABLE_BUILD=…` to the configure step. Override with the env var if a Daily build is ever wanted.
+- `.github/workflows/build-windows-exe.yml` — forced `-DQGC_STABLE_BUILD=ON` (the prior expression only
+  matched a tag or capital‑`Stable` ref; this fork's branch is lowercase `upgrade/v5.0.8-stable`, so the
+  CI‑built `.exe` would otherwise stay Daily).
+- Desktop build docs in `/root/CLAUDE.md` updated to pass `-DQGC_STABLE_BUILD=ON`.
+
+Result: title bar / About now read **"QGroundControl"** (no "Daily"). The About **version string** stays
+`v5.0.8-<N>-g<hash>` from `git describe --tags` (`cmake/Git.cmake`) — i.e. honestly "v5.0.8 + the fork
+commits"; the parsed numeric version is already `5.0.8`. No custom feature was altered.
+
 ### ✅ Done — app-lock + event-log REMOVED; APK and installer rebuilt & swapped (2026-06-12)
 
 The application password-lock and the asynchronous event-logging subsystem (both added 2026-06-08 in
