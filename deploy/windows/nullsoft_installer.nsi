@@ -4,6 +4,14 @@
 !include Win\Propkey.nsh
 !include "FileFunc.nsh"
 
+; APPEXE is the Qt application executable basename. With the Windows bootstrap
+; launcher (QGC_WINDOWS_BOOTSTRAP), EXENAME is the launcher (QGroundControl.exe)
+; and APPEXE is the renamed Qt app (QGroundControlApp.exe). For default builds the
+; two are identical, so fall back to EXENAME.
+!ifndef APPEXE
+    !define APPEXE "${EXENAME}"
+!endif
+
 !macro DemoteShortCut target
     !insertmacro ComHlpr_CreateInProcInstance ${CLSID_ShellLink} ${IID_IShellLink} r0 ""
     ${If} $0 <> 0
@@ -82,7 +90,8 @@ doUninstall:
 doInstall:
   SetRegView 64
   SetOutPath $INSTDIR
-  File /r /x ${EXENAME}.pdb /x ${EXENAME}.lib /x ${EXENAME}.exp ${DESTDIR}\*.*
+  ; Install payload (exclude build-only artifacts of the Qt app and launcher)
+  File /r /x ${APPEXE}.pdb /x ${APPEXE}.lib /x ${APPEXE}.exp /x ${EXENAME}.pdb ${DESTDIR}\*.*
 
   ; Driver location is http://firmware.ardupilot.org/Tools/MissionPlanner/driver.msi
   ; Whenever this driver is updated in the repo QGCCURRENTDRIVERVERSION must be bumped by 1
@@ -91,9 +100,9 @@ doInstall:
   WriteUninstaller $INSTDIR\${EXENAME}-Uninstall.exe
   WriteRegStr HKLM "SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\${APPNAME}" "DisplayName" "${APPNAME}"
   WriteRegStr HKLM "SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\${APPNAME}" "UninstallString" "$\"$INSTDIR\${EXENAME}-Uninstall.exe$\""
-  WriteRegDWORD HKLM "SOFTWARE\Microsoft\Windows\Windows Error Reporting\LocalDumps\${EXENAME}.exe" "DumpCount" 5
-  WriteRegDWORD HKLM "SOFTWARE\Microsoft\Windows\Windows Error Reporting\LocalDumps\${EXENAME}.exe" "DumpType" 1
-  WriteRegExpandStr HKLM "SOFTWARE\Microsoft\Windows\Windows Error Reporting\LocalDumps\${EXENAME}.exe" "DumpFolder" "%LOCALAPPDATA%\QGCCrashDumps"
+  WriteRegDWORD HKLM "SOFTWARE\Microsoft\Windows\Windows Error Reporting\LocalDumps\${APPEXE}.exe" "DumpCount" 5
+  WriteRegDWORD HKLM "SOFTWARE\Microsoft\Windows\Windows Error Reporting\LocalDumps\${APPEXE}.exe" "DumpType" 1
+  WriteRegExpandStr HKLM "SOFTWARE\Microsoft\Windows\Windows Error Reporting\LocalDumps\${APPEXE}.exe" "DumpFolder" "%LOCALAPPDATA%\QGCCrashDumps"
 
   ; QGC stores its own driver version key to prevent installation if already up to date
   ; This prevents running the driver install a second time which will start up in repair mode which is confusing
@@ -146,7 +155,7 @@ Section "Uninstall"
     RMDir /r /REBOOTOK "$APPDATA\${ORGNAME}\"
   ${Endif}
   DeleteRegKey HKLM "SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\${APPNAME}"
-  DeleteRegKey HKLM "SOFTWARE\Microsoft\Windows\Windows Error Reporting\LocalDumps\${EXENAME}.exe"
+  DeleteRegKey HKLM "SOFTWARE\Microsoft\Windows\Windows Error Reporting\LocalDumps\${APPEXE}.exe"
   ; NOTE: We specifically do not delete the driver version key since we need it to persist around uninstalls
 SectionEnd
 

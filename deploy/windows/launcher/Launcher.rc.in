@@ -1,0 +1,38 @@
+// Generated from Launcher.rc.in by CMake. Resource script for the QGroundControl
+// bootstrap launcher: application icon, version info, and the application
+// manifest (asInvoker execution level + Common-Controls v6).
+#include "winver.h"
+
+#define IDI_ICON1 1
+IDI_ICON1 ICON "@QGC_LAUNCHER_ICON_PATH@"
+
+// RT_MANIFEST (24), CREATEPROCESS_MANIFEST_RESOURCE_ID (1)
+1 24 "app.manifest"
+
+VS_VERSION_INFO VERSIONINFO
+ FILEVERSION @QGC_LAUNCHER_VERSION_COMMA@
+ PRODUCTVERSION @QGC_LAUNCHER_VERSION_COMMA@
+ FILEFLAGS 0x0L
+ FILEFLAGSMASK 0x3fL
+ FILEOS 0x00040004L
+ FILETYPE 0x1L
+ FILESUBTYPE 0x0L
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "000004b0"
+        BEGIN
+            VALUE "CompanyName", "@QGC_LAUNCHER_ORG_NAME@"
+            VALUE "FileDescription", "@QGC_LAUNCHER_APP_NAME@ Launcher"
+            VALUE "FileVersion", "@QGC_LAUNCHER_VERSION_STR@"
+            VALUE "InternalName", "@QGC_LAUNCHER_APP_NAME@Launcher"
+            VALUE "OriginalFilename", "@QGC_LAUNCHER_APP_NAME@.exe"
+            VALUE "ProductName", "@QGC_LAUNCHER_APP_NAME@"
+            VALUE "ProductVersion", "@QGC_LAUNCHER_VERSION_STR@"
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x0, 1200
+    END
+END

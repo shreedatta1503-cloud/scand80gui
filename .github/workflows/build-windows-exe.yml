@@ -1,0 +1,123 @@
+# Fork-friendly Windows build: produces a downloadable QGroundControl-installer.exe
+# as a GitHub Actions artifact (no AWS/Play-Store secrets required).
+#
+# Mirrors the upstream v5.0.8 .github/workflows/windows.yml recipe (Qt 6.8.3 +
+# GStreamer 1.22.12 + MSVC + NSIS, installer produced by `cmake --install` which
+# runs cmake/CreateWinInstaller.cmake -> makensis). Adds the scand80gui options:
+#   - QGC_WINDOWS_BOOTSTRAP  : build the self-repairing Win32 bootstrap launcher
+#   - QGC_ENABLE_GST_VIDEOSTREAMING : toggle GStreamer video
+name: Build Windows EXE
+
+on:
+  workflow_dispatch:
+    inputs:
+      build_type:
+        description: "CMake build type"
+        type: choice
+        options: [Release, RelWithDebInfo]
+        default: Release
+      enable_bootstrap:
+        description: "Build the bootstrap launcher (QGroundControl.exe self-repairs runtime, app becomes QGroundControlApp.exe)"
+        type: boolean
+        default: false
+      enable_video:
+        description: "Enable GStreamer video streaming"
+        type: boolean
+        default: true
+
+jobs:
+  build:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: cmd
+    env:
+      ARTIFACT: QGroundControl-installer.exe
+      QT_VERSION: 6.8.3
+      GST_VERSION: 1.22.12
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0
+
+      - name: Initial Setup
+        uses: ./.github/actions/common
+
+      - name: Install Vulkan
+        working-directory: ${{ runner.temp }}
+        shell: pwsh
+        run: |
+          Invoke-WebRequest -Uri "https://sdk.lunarg.com/sdk/download/latest/windows/vulkan-sdk.exe" -OutFile vulkan-sdk.exe
+          .\vulkan-sdk.exe --root C:\VulkanSDK\latest --accept-licenses --default-answer --confirm-command install com.lunarg.vulkan.glm com.lunarg.vulkan.volk com.lunarg.vulkan.vma com.lunarg.vulkan.debug
+          echo "VULKAN_SDK=C:\VulkanSDK\latest" >> $env:GITHUB_ENV
+
+      - name: Install GStreamer
+        if: ${{ inputs.enable_video }}
+        uses: blinemedical/setup-gstreamer@v1
+        with:
+          version: ${{ env.GST_VERSION }}
+
+      # The install step runs cmake/CreateWinInstaller.cmake, which does
+      # find_program(makensis REQUIRED) and hard-fails if NSIS is absent.
+      # windows-latest no longer ships NSIS, so install it explicitly. Chocolatey
+      # drops makensis at C:\Program Files (x86)\NSIS\, already on the find PATHS.
+      - name: Install NSIS (makensis, for the Windows installer)
+        shell: powershell
+        run: |
+          choco install nsis -y --no-progress
+          $nsis = "C:\Program Files (x86)\NSIS"
+          if (-not (Test-Path "$nsis\makensis.exe")) { throw "makensis not found after install" }
+          Add-Content -Path $env:GITHUB_PATH -Value $nsis
+
+      - name: Install Qt for Windows (x64)
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: ${{ env.QT_VERSION }}
+          host: windows
+          target: desktop
+          arch: win64_msvc2022_64
+          dir: ${{ runner.temp }}
+          modules: qtcharts qtlocation qtpositioning qtspeech qt5compat qtmultimedia qtserialport qtimageformats qtshadertools qtconnectivity qtquick3d qtsensors
+          cache: true
+
+      - name: Set up Visual Studio shell
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      - name: Configure
+        working-directory: ${{ runner.temp }}\shadow_build_dir
+        run: ${{ env.QT_ROOT_DIR }}/bin/qt-cmake -S ${{ github.workspace }} -B . -G Ninja
+              -DCMAKE_BUILD_TYPE=${{ inputs.build_type }}
+              -DQT_HOST_PATH="${{ env.QT_ROOT_DIR }}/../msvc2022_64"
+              -DQGC_STABLE_BUILD=${{ github.ref_type == 'tag' || contains(github.ref, 'Stable') && 'ON' || 'OFF' }}
+              -DQGC_ENABLE_GST_VIDEOSTREAMING=${{ inputs.enable_video && 'ON' || 'OFF' }}
+              -DQGC_WINDOWS_BOOTSTRAP=${{ inputs.enable_bootstrap && 'ON' || 'OFF' }}
+
+      - name: Build
+        working-directory: ${{ runner.temp }}\shadow_build_dir
+        run: cmake --build . --target all --config ${{ inputs.build_type }}
+
+      - name: Install (creates QGroundControl-installer.exe via NSIS)
+        working-directory: ${{ runner.temp }}\shadow_build_dir
+        run: cmake --install . --config ${{ inputs.build_type }}
+
+      - name: Locate installer
+        shell: pwsh
+        working-directory: ${{ runner.temp }}\shadow_build_dir
+        run: |
+          $exe = Get-ChildItem -Recurse -Filter '*installer*.exe' | Select-Object -First 1
+          if (-not $exe) { throw "No installer .exe produced" }
+          Copy-Item $exe.FullName "${{ github.workspace }}\${{ env.ARTIFACT }}"
+          Write-Host "Installer: $($exe.FullName)"
+
+      - name: Upload installer artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: QGroundControl-installer
+          path: ${{ github.workspace }}\${{ env.ARTIFACT }}
+          retention-days: 14
+          if-no-files-found: error

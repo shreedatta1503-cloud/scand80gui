@@ -1,0 +1,17 @@
+{
+    "qt_version": "6.8.3",
+    "qt_minimum_version": "6.8.3",
+    "qt_maximum_version": "6.8.3",
+    "qt_modules": "qtcharts qtlocation qtpositioning qtspeech qt5compat qtmultimedia qtserialport qtimageformats qtshadertools qtconnectivity qtquick3d qtsensors",
+    "cmake_minimum_version": "3.22.1",
+    "ndk_version": "r26b",
+    "ndk_full_version": "26.1.10909125",
+    "android_platform": "35",
+    "android_build_tools": "35.0.0",
+    "android_cmdline_tools": "12266719",
+    "android_min_sdk": "28",
+    "java_version": "17",
+    "ccache_version": "4.11.3",
+    "gstreamer_android_version": "1.22.12",
+    "gstreamer_minimum_version": "1.20.0"
+}

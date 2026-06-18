@@ -561,13 +561,28 @@ qt_import_plugins(${CMAKE_PROJECT_NAME}
 )
 
 if(LINUX)
-    qt_import_plugins(${CMAKE_PROJECT_NAME} 
+    qt_import_plugins(${CMAKE_PROJECT_NAME}
         INCLUDE
             Qt6::QWaylandIntegrationPlugin
             Qt6::QXcbIntegrationPlugin
             Qt6::QEglFSIntegrationPlugin
             Qt6::QWaylandEglPlatformIntegrationPlugin
     )
+endif()
+
+# ============================================================================
+# Windows Bootstrap Launcher
+# ============================================================================
+# When enabled, a tiny dependency-free Win32 launcher takes over the
+# QGroundControl.exe name (so a double-click always starts on a clean machine)
+# and the Qt application is renamed to QGroundControlApp.exe. The launcher
+# verifies/repairs the runtime, then spawns the Qt app forwarding all CLI args.
+# windeployqt follows the target via $<TARGET_FILE>, so renaming OUTPUT_NAME
+# deploys correctly against QGroundControlApp.exe without further changes.
+if(WIN32 AND MSVC AND QGC_WINDOWS_BOOTSTRAP)
+    set_target_properties(${CMAKE_PROJECT_NAME} PROPERTIES OUTPUT_NAME "${CMAKE_PROJECT_NAME}App")
+    add_subdirectory(deploy/windows/launcher)
+    message(STATUS "QGC: Windows bootstrap launcher enabled (app renamed to ${CMAKE_PROJECT_NAME}App.exe)")
 endif()
 
 include(Install)

@@ -14,6 +14,12 @@ if(MACOS OR WIN32)
     if(MACOS)
         list(APPEND deploy_tool_options_arg "-appstore-compliant")
     endif()
+    if(WIN32)
+        # Bundle the MSVC runtime app-locally so a clean machine can run without
+        # a separate VC++ redistributable install. The bootstrap launcher treats
+        # the system redist only as a fallback (see deploy/windows/launcher).
+        list(APPEND deploy_tool_options_arg "--compiler-runtime")
+    endif()
 endif()
 
 # Set extra deploy QML app script options for Qt 6.7.0 and above
@@ -65,6 +71,16 @@ elseif(LINUX)
     )
     install(SCRIPT "${CMAKE_SOURCE_DIR}/cmake/CreateAppImage.cmake")
 elseif(WIN32)
+    # When the bootstrap launcher is enabled, ship its external dependency manifest
+    # next to the binaries (bin/). The launcher reads this at runtime. Installed
+    # before the NSIS packaging step below so it is part of the payload.
+    if(QGC_WINDOWS_BOOTSTRAP)
+        install(
+            FILES "${CMAKE_SOURCE_DIR}/deploy/windows/launcher/qgc-bootstrap.json"
+            DESTINATION ${CMAKE_INSTALL_BINDIR}
+        )
+    endif()
+
     install(CODE "set(CMAKE_PROJECT_NAME ${CMAKE_PROJECT_NAME})")
     install(CODE "set(QGC_ORG_NAME ${QGC_ORG_NAME})")
     install(CODE "set(QGC_WINDOWS_ICON_PATH ${QGC_WINDOWS_ICON_PATH})")
@@ -72,6 +88,7 @@ elseif(WIN32)
     install(CODE "set(QGC_WINDOWS_DRIVER_MSI ${CMAKE_SOURCE_DIR}/deploy/windows/driver.msi)")
     install(CODE "set(QGC_WINDOWS_OUT ${CMAKE_BINARY_DIR}/${CMAKE_PROJECT_NAME}-installer.exe)")
     install(CODE "set(QGC_WINDOWS_INSTALLER_SCRIPT ${CMAKE_SOURCE_DIR}/deploy/windows/nullsoft_installer.nsi)")
+    install(CODE "set(QGC_WINDOWS_BOOTSTRAP ${QGC_WINDOWS_BOOTSTRAP})")
     install(SCRIPT "${CMAKE_SOURCE_DIR}/cmake/CreateWinInstaller.cmake")
 elseif(MACOS)
     install(CODE "set(QGC_STAGING_BUNDLE_PATH \"${CMAKE_BINARY_DIR}/staging/${CMAKE_PROJECT_NAME}.app\")")
