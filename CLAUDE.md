@@ -256,7 +256,65 @@ Three options, in order of convenience:
    `C:\Qt\6.10.3\msvc2022_64\bin\qt-cmake.bat -B build -G Ninja -DCMAKE_BUILD_TYPE=Release` then
    `cmake --build build`.
 
-Toolchain pins (from `build-config.json`): Qt **6.10.3** (min 6.10.0), CMake **3.25+**, MSVC 2022 on Windows.
+Toolchain pins (from `.github/build-config.json`, **post‑v5.0.8 upgrade**): Qt **6.8.3** (min/max 6.8.3),
+NDK **r26b** (`26.1.10909125`), Android GStreamer **1.22.12**, CMake **3.22.1+**, JDK 17, MSVC 2022 on
+Windows. (Were Qt 6.10.3 / NDK r27c / GStreamer 1.28.1 on the prior master‑based tree.)
+
+### ✅ Done — UPGRADED to official Stable QGroundControl v5.0.8 (2026-06-18)
+
+The fork was re‑based from upstream **master** (`v5.0.3-1040`, 2026‑05‑28 — which violated a "stable
+only, no master" requirement) onto the **official v5.0.8 stable tag** (2025‑10‑09, `prerelease=false`),
+and all scand80gui customizations were replayed on top. Current branch **`upgrade/v5.0.8-stable`**,
+`git describe` = **`v5.0.8-4-g59e4d72ff`** (the v5.0.8 tag + 4 customization commits).
+
+**Why a base‑swap, not a fast‑forward:** the prior tree sat on a 2026 master snapshot that is dev‑*ahead*
+of v5.0.8 on a divergent branch (neither is an ancestor of the other). Honouring "stable only" meant
+moving onto the v5.0.8 line and dropping the ~1017 newer upstream master commits, keeping only our
+customizations. Migration delta vs `v5.0.8`: **53 files, +5194/−8** (saved as `/root/migration-v5.0.8.diff`).
+
+**Structural adaptations required by v5.0.8 (vs the master base the customizations were written against):**
+- **`src/FlyView/` → `src/FlightDisplay/`** — upstream renamed the module after the divergence. The
+  Payload Drop / Nav Lights widgets now live in `src/FlightDisplay/` and are registered in its
+  `CMakeLists.txt`; they mount in `src/FlightDisplay/FlyViewTopRightColumnLayout.qml`.
+- **Backported `Vehicle::servoOutputsChanged` + `_servoOutputRawValues` + the `SERVO_OUTPUT_RAW`
+  handler** — master‑era infrastructure absent in v5.0.8, on which Payload‑pin (AUX10) feedback and the
+  Nav‑Lights (SERVO13) state indicator depend.
+- **`_handleRCChannels` RC9 trigger** rewritten for v5.0.8's `_rgChannelvalues[]`/`pwmValues[]` decode
+  locals (master used `rawChannelValues[]`/`clampedValues[]`).
+- **`QGC::showAppMessage(...)` → `qgcApp()->showAppMessage(...)`** (v5.0.8 API).
+- **`PayloadDropController.h` now includes `Vehicle.h`** (not just a forward decl) so the generated QML
+  type‑registration TU has a complete `Vehicle` for `Q_PROPERTY(Vehicle*)` / `QPointer<Vehicle>`.
+- **Dependency pin:** `src/GPS/CMakeLists.txt` pins **PX4‑GPSDrivers to `0b96958`** (its `main` at the
+  v5.0.8 tag). Upstream `main` later added a `Settings` arg to `GPSDriverUBX` that breaks v5.0.8's
+  5‑arg `GPSProvider.cc` call site (the only unpinned dep that drifted; others still built clean).
+- **Android `-Werror`:** dropped the redundant `const int channel` capture on the deferred
+  `Fact::vehicleUpdated` lambda (Android Clang `-Wunused-lambda-capture`).
+
+**Android pipeline:** `.github/build-config.json` recreated (it was a master/fork convention absent in
+v5.0.8) with v5.0.8's pins so `build_android.sh` drives the correct toolchain. `build_android.sh` now
+pre‑stages the Android GStreamer 1.22.12 tarball and passes `-DFETCHCONTENT_SOURCE_DIR_GSTREAMER`.
+
+**Windows:** all bootstrap‑launcher / installer config re‑homed onto v5.0.8's `cmake/` layout (v5.0.8
+keeps `cmake/Install.cmake` + `cmake/CreateWinInstaller.cmake`, not master's `cmake/install/`). The
+`.github/workflows/build-windows-exe.yml` was **rewritten** — the original referenced master‑era
+`cmake-configure/build/install` composite actions that don't exist in v5.0.8; it now mirrors v5.0.8's
+`windows.yml` (Qt 6.8.3 + GStreamer 1.22.12 + MSVC + NSIS, installer via `cmake --install`) and uploads
+a downloadable `QGroundControl-installer.exe` artifact, with `QGC_WINDOWS_BOOTSTRAP`/video toggles.
+
+**Artifacts & validation (built on this headless Linux box):**
+- **APK** — `/root/QGroundControl.apk`, **82 MB**, sha256 `b37290c3…`. **versionName 5.0.8** (was 5.0.3),
+  `org.mavlink.qgroundcontrol`, **arm64‑v8a, minSdk 29, Release**, **signed — APK Signature Scheme v3
+  verified**, cert `CN=QGroundControl, O=QGC, C=US`. Custom symbols present in
+  `libQGroundControl_arm64-v8a.so` (`PayloadDropController`, `sendNavigationLights`, `rc9TriggerChanged`);
+  **GStreamer video enabled** ("Enable GStreamer: YES", statically linked). Build log:
+  `/root/build_android.log`. Full C++ compiled warnings‑as‑errors; all custom QML passed `qmlcachegen`.
+- **Windows `.exe`** — **not built here** (no MSVC/NSIS on this Linux box). Config + the rewritten CI
+  workflow are ready; run `build-windows-exe.yml` from the Actions tab to produce the signed installer.
+- **Runtime launch** — **not executed.** The APK/`.exe` can't run on this headless x86 Linux box, and a
+  native‑Linux validation build won't *configure* here due to a v5.0.8 + Qt‑6.8.3 + host‑GStreamer‑1.28.2
+  `qt_add_resources` quirk (absolute `.qsb` path) that is **unrelated to the migration** — a clean v5.0.8
+  checkout fails identically on this box. Validation therefore rests at the build/artifact level above.
+- **Not yet pushed / PR'd.** Branch `upgrade/v5.0.8-stable` is local for review.
 
 ### ✅ Done — app-lock + event-log REMOVED; APK and installer rebuilt & swapped (2026-06-12)
 
