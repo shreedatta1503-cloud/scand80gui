@@ -27,6 +27,7 @@ if "%BUILD_DIR%"=="" set "BUILD_DIR=%QGC_SRC%\build-android"
 if "%BUILD_TYPE%"=="" set "BUILD_TYPE=Release"
 if "%QGC_ABIS%"=="" set "QGC_ABIS=arm64-v8a"
 if "%ANDROID_MIN_SDK%"=="" set "ANDROID_MIN_SDK=29"
+if "%QGC_STABLE_BUILD%"=="" set "QGC_STABLE_BUILD=ON"
 if "%TOOLS_ROOT%"=="" set "TOOLS_ROOT=C:\qgc-android"
 if "%ANDROID_SDK_ROOT%"=="" set "ANDROID_SDK_ROOT=%TOOLS_ROOT%\android-sdk"
 if "%QT_BASE%"=="" set "QT_BASE=%TOOLS_ROOT%\Qt"
@@ -109,6 +110,7 @@ cmake -S "%QGC_SRC%" -B "%BUILD_DIR%" -G Ninja ^
   -DANDROID_NDK="%ANDROID_NDK_ROOT%" ^
   -DANDROID_NDK_ROOT="%ANDROID_NDK_ROOT%" ^
   -DQT_ANDROID_SIGN_APK=ON ^
+  -DQGC_STABLE_BUILD=%QGC_STABLE_BUILD% ^
   -DQGC_QT_ANDROID_MIN_SDK_VERSION=%ANDROID_MIN_SDK% ^
   -DPython3_EXECUTABLE="%QGC_SRC%\.venv\Scripts\python.exe" ^
   -DCMAKE_WARN_DEPRECATED=FALSE || goto :err

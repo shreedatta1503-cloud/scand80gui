@@ -8,6 +8,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 > NDK **r26b**, Android GStreamer **1.22.12** (were Qt 6.10.3 / r27c / 1.28.1). The Android APK was rebuilt
 > and is `/root/QGroundControl.apk` (~82 MB, versionName 5.0.8). See the dated entry in
 > `qgroundcontrol/CLAUDE.md` for the full migration log; version-specific facts below are updated to match.
+>
+> **Stable branding fixed (2026-06-18).** The app previously launched titled **"QGroundControl Daily"**
+> because `QGC_STABLE_BUILD` defaults **OFF** (→ `QGC_DAILY_BUILD` → `src/QGCApplication.cc` appends
+> " Daily"). The build pipeline now configures with **`-DQGC_STABLE_BUILD=ON`** so the app identifies as
+> **"QGroundControl"** (verified: APK `application-label='QGroundControl'`, versionName `5.0.8`, and the
+> " Daily" literal is gone from `libQGroundControl_arm64-v8a.so`). The About-dialog version string stays
+> `v5.0.8-N-g…` by design (honest "v5.0.8 + fork commits"). See `MIGRATION_REPORT.md` and the
+> "Stable vs Daily branding" note under the desktop-build section below.
 
 ## Repository layout — read this first
 
@@ -73,9 +81,19 @@ Notes:
 cd qgroundcontrol
 export QT_DIR=/opt/Qt/6.8.3/gcc_64 PATH="$QT_DIR/bin:$PATH"
 qt-cmake -S . -B build-desktop -G Ninja -DCMAKE_BUILD_TYPE=Release \
+  -DQGC_STABLE_BUILD=ON \
   -DPython3_EXECUTABLE="$PWD/.venv/bin/python"
 cmake --build build-desktop --config Release --parallel "$(nproc)"   # 128 cores here
 ```
+
+> **Stable vs Daily branding.** `QGC_STABLE_BUILD` defaults to **OFF** in `cmake/CustomOptions.cmake`, which
+> makes `CMakeLists.txt` define `QGC_DAILY_BUILD` and `src/QGCApplication.cc` name the app
+> **"QGroundControl Daily"** (separate settings space, in-app update check enabled). Upstream CI flips it ON
+> only for tag/`Stable` builds. **This fork is a stable v5.0.8 release, so always configure with
+> `-DQGC_STABLE_BUILD=ON`** — then the title bar / About dialog read "QGroundControl" (no "Daily"). The
+> Android pipeline (`build_android.sh`/`.bat`) defaults this to `ON` already (override with the
+> `QGC_STABLE_BUILD` env var). The About-dialog version string itself comes from `git describe --tags`
+> (`cmake/Git.cmake`), so it reads `v5.0.8-<N>-g<hash>` (i.e. v5.0.8 + the fork commits) — that is intended.
 
 Main source builds with **warnings-as-errors**.
 
@@ -111,11 +129,12 @@ cd /root
 ./build_android.sh                          # full: provision toolchain → configure → build → sign → verify
 SKIP_TOOLCHAIN=1 ./build_android.sh         # reuse installed toolchain (fast; ccache warm)
 OUT_APK=My.apk SKIP_TOOLCHAIN=1 ./build_android.sh   # override output filename
+QGC_STABLE_BUILD=OFF ./build_android.sh     # opt back into "QGroundControl Daily" branding (default is ON)
 ```
 
-- **Output:** `/root/QGroundControl.apk` (default name; override with `OUT_APK`). **~82 MB** (v5.0.8; was ~187 MB on the master base), **versionName 5.0.8**, signed v3 scheme, `org.mavlink.qgroundcontrol`, **minSdk 29 (Android 10)**, target/compile SDK 35, arm64-v8a only. GStreamer video is enabled and **statically linked** into `libQGroundControl_arm64-v8a.so` (so there are no separate `libgst*.so` — that, plus the older GStreamer 1.22.12, accounts for the smaller size).
+- **Output:** `/root/QGroundControl.apk` (default name; override with `OUT_APK`). **~82 MB** (v5.0.8; was ~187 MB on the master base), **versionName 5.0.8**, **stable-branded `application-label='QGroundControl'`** (not "Daily" — the script defaults `QGC_STABLE_BUILD=ON`), signed v3 scheme, `org.mavlink.qgroundcontrol`, **minSdk 29 (Android 10)**, target/compile SDK 35, arm64-v8a only. GStreamer video is enabled and **statically linked** into `libQGroundControl_arm64-v8a.so` (so there are no separate `libgst*.so` — that, plus the older GStreamer 1.22.12, accounts for the smaller size).
 - **Toolchain it provisions to `/opt`** (idempotent, versions from `.github/build-config.json`): JDK 17, **Qt 6.8.3** `android_arm64_v8a` + `gcc_64` host (via `aqt`), **Android NDK r26b** (`26.1.10909125`), SDK platform-35, build-tools 35.0.0, ccache. The desktop `gcc_64` Qt doubles as `QT_HOST_PATH`. Signing keystore: `/root/android_release.keystore` (alias `QGCAndroidKeyStore`, pass `qgcandroid`; cert `CN=QGroundControl, O=QGC, C=US`).
-- **Configure mirrors CI:** plain `cmake` (not `qt-cmake`) with `-DCMAKE_TOOLCHAIN_FILE=…/android_arm64_v8a/lib/cmake/Qt6/qt.toolchain.cmake`, `-DQT_HOST_PATH=…/gcc_64`, `-DQT_ANDROID_ABIS=arm64-v8a`, `-DQT_ANDROID_SIGN_APK=ON`, `-DQGC_QT_ANDROID_MIN_SDK_VERSION=29`. Then `cmake --build … --parallel` and `--target apk` (androiddeployqt → Gradle). LTO is auto-enabled for Release.
+- **Configure mirrors CI:** plain `cmake` (not `qt-cmake`) with `-DCMAKE_TOOLCHAIN_FILE=…/android_arm64_v8a/lib/cmake/Qt6/qt.toolchain.cmake`, `-DQT_HOST_PATH=…/gcc_64`, `-DQT_ANDROID_ABIS=arm64-v8a`, `-DQT_ANDROID_SIGN_APK=ON`, `-DQGC_STABLE_BUILD=ON` (release branding), `-DQGC_QT_ANDROID_MIN_SDK_VERSION=29`. Then `cmake --build … --parallel` and `--target apk` (androiddeployqt → Gradle). LTO is auto-enabled for Release.
 - **Python venv:** the build needs `qgroundcontrol/.venv` with **`jinja2` AND `defusedxml`** (MAVLink/codegen generators import both). Missing `defusedxml` fails the `MAVLinkInstanceFields.h` gen step at ~70% of compile.
 - **Two non-obvious traps (already handled by the script):**
   - **GStreamer Android tarball** — v5.0.8 fetches it via `CPMAddPackage` (no SHA validation; URL_HASH commented out), unlike the master base's `file(DOWNLOAD)` + 60 s-timeout + `build-config.json` SHA check. `build_android.sh` pre-stages `gstreamer-1.0-android-universal-1.22.12.tar.xz` (~420 MB compressed) under `/opt/gst-stage/`, extracts it, and passes `-DFETCHCONTENT_SOURCE_DIR_GSTREAMER=/opt/gst-stage/gstreamer-android-1.22.12` so CPM bypasses the download entirely.
@@ -138,7 +157,7 @@ The single executable target is defined in the top-level `CMakeLists.txt`: Qt re
 
 ## `/root` housekeeping (not in the repo)
 
-**Tracked** in `scand80gui` alongside the build-config snapshot: `build_android.sh`, `build_android.bat`, `README.md` (the Android APK pipeline, see above), and `android_release.keystore` (the self-contained signing keystore — replace with a real release key for Play Store).
+**Tracked** in `scand80gui` alongside the build-config snapshot: `build_android.sh`, `build_android.bat`, `README.md` (the Android APK pipeline, see above), `MIGRATION_REPORT.md` (the v5.0.8 + Daily→stable branding migration record), and `android_release.keystore` (the self-contained signing keystore — replace with a real release key for Play Store).
 
 The following live in `/root` but are deliberately **gitignored** from `scand80gui` and must never be committed:
 - Secrets: `.git-credentials` (GitHub token), `.gitconfig`, `.claude.json`, `.claude/`, `.bash_history`, `.ssh/`.

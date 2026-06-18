@@ -38,6 +38,7 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 : "${BUILD_TYPE:=Release}"                        # Release  → stripped, optimized
 : "${QGC_ABIS:=arm64-v8a}"                        # target ABI(s); ';'-separated
 : "${ANDROID_MIN_SDK:=29}"                        # 29 = Android 10  (req: Android 10+)
+: "${QGC_STABLE_BUILD:=ON}"                       # ON → release branding ("QGroundControl"); OFF → "QGroundControl Daily"
 : "${TOOLS_ROOT:=/opt}"                           # where SDK/NDK/Qt live
 : "${ANDROID_SDK_ROOT:=${TOOLS_ROOT}/android-sdk}"
 : "${QT_BASE:=${TOOLS_ROOT}/Qt}"                  # aqt --outputdir
@@ -213,6 +214,7 @@ cmake -S "$QGC_SRC" -B "$BUILD_DIR" -G Ninja \
   -DANDROID_NDK="${ANDROID_NDK_ROOT}" \
   -DANDROID_NDK_ROOT="${ANDROID_NDK_ROOT}" \
   -DQT_ANDROID_SIGN_APK=ON \
+  -DQGC_STABLE_BUILD="${QGC_STABLE_BUILD}" \
   -DQGC_QT_ANDROID_MIN_SDK_VERSION="${ANDROID_MIN_SDK}" \
   -DPython3_EXECUTABLE="${VENV_PY}" \
   -DCMAKE_C_COMPILER_LAUNCHER=ccache \
