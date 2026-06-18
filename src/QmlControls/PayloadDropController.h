@@ -44,7 +44,11 @@ class PayloadDropWorker;
 class PayloadDropController : public QObject
 {
     Q_OBJECT
-    QML_ELEMENT
+    // QML_ELEMENT  // This file is compiled into the main app target (see QmlControls/CMakeLists.txt
+                    // target_sources), NOT into the QGroundControl.Controls QML module, so QML_ELEMENT
+                    // is never seen by that module's qmltyperegistrar and the type stays unregistered.
+                    // Registered manually under "QGroundControl.Controls" in QGroundControlQmlGlobal.cc,
+                    // matching every other controller in this directory.
 
     /// The vehicle whose RC9 / servo feedback drives the widget. Bound from QML to
     /// QGroundControl.multiVehicleManager.activeVehicle (may be null between vehicles).

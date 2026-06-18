@@ -159,6 +159,12 @@ if(EXISTS "${QGC_GST_QT6_PLUGIN_PATH}/resources.qrc")
         #     PREFIX "/org/freedesktop/gstreamer/qml6"
         #     FILES "${RGBA_EXTERNAL}"
         # )
+        # The add_custom_command OUTPUT above is consumed only by the top-level qt_add_resources
+        # (a different directory scope), so CMake would prune its rule and ninja reports
+        # "missing and no known rule to make it". Materialize the rule with a custom target that the
+        # gstqml6gl lib depends on, so the .external shader is always generated for the resource step.
+        add_custom_target(gstqml6gl_gles_shader DEPENDS ${RGBA_EXTERNAL})
+        add_dependencies(gstqml6gl gstqml6gl_gles_shader)
     endif()
 endif()
 

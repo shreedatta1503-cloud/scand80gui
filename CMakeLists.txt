@@ -544,6 +544,16 @@ qt_add_translations(${CMAKE_PROJECT_NAME}
 
 set_source_files_properties(resources/qtquickcontrols2.conf PROPERTIES QT_RESOURCE_ALIAS qtquickcontrols2.conf)
 set_source_files_properties(${SDL_GAMECONTROLLERDB_PATH} PROPERTIES QT_RESOURCE_ALIAS gamecontrollerdb.txt)
+# The GStreamer GLES shader (.qsb.external) gets its QT_RESOURCE_ALIAS set in
+# gstqml6gl/CMakeLists.txt, but source-file properties are DIRECTORY-SCOPED: that alias is
+# invisible here, where qt_add_resources actually consumes the file. Without it, Qt rejects the
+# absolute generated path (Qt6CoreMacros.cmake "specified with an absolute path"). Re-assert the
+# alias in this scope. No-op unless the GLES shader was generated (desktop GStreamer >= 1.28;
+# the variable is empty for Android's 1.22 tarball and video-off builds, so this never affects them).
+if(QGC_GSTREAMER_SHADER_RESOURCES)
+    set_source_files_properties(${QGC_GSTREAMER_SHADER_RESOURCES} PROPERTIES
+        QT_RESOURCE_ALIAS org/freedesktop/gstreamer/qml6/RGBA.frag.qsb.external)
+endif()
 qt_add_resources(${CMAKE_PROJECT_NAME} "qgcresources_cmake"
     PREFIX "/"
     FILES

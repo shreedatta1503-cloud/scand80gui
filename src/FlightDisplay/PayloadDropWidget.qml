@@ -13,6 +13,8 @@ import QtQuick.Layouts
 
 import QGroundControl
 import QGroundControl.Controls
+import QGroundControl.Palette
+import QGroundControl.ScreenTools
 
 // Payload Drop widget.
 //

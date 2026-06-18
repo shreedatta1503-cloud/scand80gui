@@ -38,6 +38,7 @@
 #include "QGCPalette.h"
 #include "QmlObjectListModel.h"
 #include "RCToParamDialogController.h"
+#include "PayloadDropController.h"
 #include "TerrainProfile.h"
 #include "ToolStripAction.h"
 #include "ToolStripActionList.h"
@@ -99,6 +100,7 @@ void QGroundControlQmlGlobal::registerQmlTypes()
     qmlRegisterType<RCChannelMonitorController>         ("QGroundControl.Controllers",           1, 0, "RCChannelMonitorController");
     qmlRegisterType<RCToParamDialogController>          ("QGroundControl.Controllers",           1, 0, "RCToParamDialogController");
     qmlRegisterType<ScreenToolsController>              ("QGroundControl.Controllers",           1, 0, "ScreenToolsController");
+    qmlRegisterType<PayloadDropController>              ("QGroundControl.Controls",              1, 0, "PayloadDropController");
     qmlRegisterType<TerrainProfile>                     ("QGroundControl.Controls",              1, 0, "TerrainProfile");
     qmlRegisterType<ToolStripAction>                    ("QGroundControl.Controls",              1, 0, "ToolStripAction");
     qmlRegisterType<ToolStripActionList>                ("QGroundControl.Controls",              1, 0, "ToolStripActionList");
