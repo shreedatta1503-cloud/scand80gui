@@ -182,8 +182,28 @@ export QT_ANDROID_KEYSTORE_PATH QT_ANDROID_KEYSTORE_ALIAS \
 mkdir -p "$BUILD_DIR"
 
 VENV_PY="$QGC_SRC/.venv/bin/python"
+
+# --- GStreamer (Android) pre-stage -------------------------------------------
+# v5.0.8 fetches the prebuilt GStreamer Android tarball via CPMAddPackage. To avoid
+# a slow/timeout-prone download during configure, pre-stage it (if present) and point
+# FetchContent at the extracted tree, which CPM honours via FETCHCONTENT_SOURCE_DIR_<NAME>.
+GST_VERSION="$(read_cfg gstreamer_android_version 2>/dev/null || echo '')"
+GST_STAGE_TARBALL="${GST_STAGE_TARBALL:-/opt/gst-stage/gstreamer-1.0-android-universal-${GST_VERSION}.tar.xz}"
+GST_EXTRA=()
+if [[ -n "$GST_VERSION" && -f "$GST_STAGE_TARBALL" ]]; then
+  GST_SRC_DIR="/opt/gst-stage/gstreamer-android-${GST_VERSION}"
+  if [[ ! -d "$GST_SRC_DIR/arm64" ]]; then
+    say "Extracting pre-staged GStreamer $GST_VERSION → $GST_SRC_DIR ..."
+    mkdir -p "$GST_SRC_DIR"
+    tar -xf "$GST_STAGE_TARBALL" -C "$GST_SRC_DIR"
+  fi
+  GST_EXTRA=( -DFETCHCONTENT_SOURCE_DIR_GSTREAMER="$GST_SRC_DIR" )
+  say "Using pre-staged GStreamer at $GST_SRC_DIR"
+fi
+
 say "Configuring (CMake $(cmake --version | head -1 | awk '{print $3}'), $JOBS jobs) ..."
 cmake -S "$QGC_SRC" -B "$BUILD_DIR" -G Ninja \
+  "${GST_EXTRA[@]}" \
   -DCMAKE_BUILD_TYPE="$BUILD_TYPE" \
   -DCMAKE_TOOLCHAIN_FILE="${TARGET_QT_ROOT}/lib/cmake/Qt6/qt.toolchain.cmake" \
   -DCMAKE_PREFIX_PATH="${TARGET_QT_ROOT}" \

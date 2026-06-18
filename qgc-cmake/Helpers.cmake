@@ -1,3 +1,6 @@
+# OBSOLETE in v5.0.8: upstream removed cmake/Helpers.cmake during the 5.0.x refactor.
+# Retained only as a historical snapshot of the prior master-based tree.
+
 # ----------------------------------------------------------------------------
 # QGroundControl CMake Helper Functions
 # ----------------------------------------------------------------------------
