@@ -26,7 +26,8 @@ This repo is **`shreedatta1503-cloud/scand80gui`** — a true GitHub fork of `ma
 - `master` — kept pristine-equal to upstream `mavlink/qgroundcontrol` master; used only for syncing. Do not commit features here.
 - `scand80-dev` — long-running development branch; the Windows installers up to `1d825a136` (2026-06-05) were built from here.
 - `feature/payload-confirm-applock-eventlog` — `scand80-dev` + one commit (`7594aec0b`, 2026-06-08) adding payload-drop confirmation, an app password-lock, and async event logging. **Only ever built into an APK, never an installer.**
-- `feature/remove-applock-eventlog` — **current state of the shipped artifacts.** Branched off the above; removed the app-lock + event-log features (kept payload-drop confirmation + nav lights). Both `/root/QGroundControl.apk` and `/root/QGroundControl-installer.exe` are built from its HEAD (`dbb32ca19`, 2026-06-12). See the dated entry under "Windows builds" below.
+- `upgrade/v5.0.8-stable` — **current state of the shipped artifacts.** The official-v5.0.8 line with all scand80gui customizations replayed (payload-drop + confirmation, nav lights, SBUS filter, Windows bootstrap launcher; app-lock/event-log not carried over). On **2026-06-18** it was rebased onto upstream's `Stable_V5.0` branch tip (10 patch commits beyond the v5.0.8 tag — the in-progress v5.0.9), so `git describe` = **`v5.0.8-16-g7d134ff39`**. **Both** `/root/QGroundControl.apk` and `/root/QGroundControl-installer.exe` are now built from its HEAD (`7d134ff39`). See the top dated entry under "Windows builds" below.
+- `feature/remove-applock-eventlog` — **prior shipped state (pre‑v5.0.8, master‑based; superseded 2026-06-18).** Branched off the above; removed the app-lock + event-log features (kept payload-drop confirmation + nav lights). The artifacts up to HEAD (`dbb32ca19`, 2026-06-12) — incl. the 103 MB master‑based `.exe` — were built from here before shipping moved to `upgrade/v5.0.8-stable`.
 - `payload-drop` — legacy branch with an earlier, different payload implementation (a 6-servo radial widget driven by `DO_SET_SERVO`). Superseded by the widget on `scand80-dev`; kept for reference.
 
 Git identity in this clone: `shreedatta1503-cloud`. Push/pull is pre-authorized (a classic PAT with `repo`+`workflow` scopes is stored in `~/.git-credentials`; `workflow` scope is required to push `.github/workflows/**`).
@@ -34,9 +35,15 @@ Git identity in this clone: `shreedatta1503-cloud`. Push/pull is pre-authorized 
 ## Payload Drop widget (the main feature on `scand80-dev`)
 
 A Fly View widget for a two-stage payload release on an ArduPilot + Cube Orange+ setup. Hidden by
-default; revealed by RC Channel 9 activity. Channel mapping uses ArduPilot's convention **AUX OUT n = SERVOn**.
+default; revealed by **RC Channel 13** activity (was Channel 9 until commit `8b81b71dd`, 2026-06-25 —
+see the dated entry under "Windows builds"). Channel mapping uses ArduPilot's convention **AUX OUT n = SERVOn**.
 
-Flow: **RC Ch9 high (`2000µs`) shows** the widget / **low (`1000µs`) hides** it (non-destructive — see
+> **NOTE:** the C++/QML *symbol* names around the trigger are still spelled `rc9*` (`Vehicle::rc9TriggerChanged`,
+> `PayloadDropWorker::_rc9Pwm`, `rcTriggerChannel`, etc.). Since `8b81b71dd` those identifiers carry **Ch13**'s
+> PWM — only the channel *index* changed (`_rgChannelvalues[12]`). The names are legacy cosmetics, intentionally
+> left to avoid a no-behaviour rename churn across `Vehicle.{h,cc}` + `PayloadDropController.{h,cc}`.
+
+Flow: **RC Ch13 high (`2000µs`) shows** the widget / **low (`1000µs`) hides** it (non-destructive — see
 below) → **Remove Pin** (saffron button) → immediately fires `DO_SET_SERVO(9, 2000)` (AUX OUT 9 pin
 actuator) → monitor `SERVO_OUTPUT_RAW[10]` (AUX OUT 10); when it crosses 1500µs the **Remove Pin button
 turns neon green (`#39FF14`)** with its 1px red border and **DROP** is enabled → **DROP** (circular
@@ -260,6 +267,144 @@ Toolchain pins (from `.github/build-config.json`, **post‑v5.0.8 upgrade**): Qt
 NDK **r26b** (`26.1.10909125`), Android GStreamer **1.22.12**, CMake **3.22.1+**, JDK 17, MSVC 2022 on
 Windows. (Were Qt 6.10.3 / NDK r27c / GStreamer 1.28.1 on the prior master‑based tree.)
 
+### ✅ Done — payload-drop trigger moved RC **Channel 9 → Channel 13**; BOTH artifacts rebuilt (2026-06-25, commit `8b81b71dd`)
+
+The Payload Drop widget is now revealed by **RC Channel 13** instead of Channel 9. The change was a
+**single channel selector** — the rest of the trigger path is channel-agnostic, so nothing else needed
+touching and no bug was found.
+
+**Files changed (commit `8b81b71dd`, pushed to `origin/upgrade/v5.0.8-stable`):**
+- `src/Vehicle/Vehicle.cc` — `_handleRCChannels()` reads the trigger from `*_rgChannelvalues[12]`
+  (`chan13_raw`) instead of `[8]` (`chan9_raw`). This array index is the **only** place the trigger
+  channel is selected. The two user-visible app messages ("RC channel 13 detected…" / "…send at least
+  13 channels…") and the trigger comment block were updated to Ch13. (Line ~1483's `&channels.chan9_raw`
+  stays — that entry is part of the full 18-channel array published via `rcChannelsChanged` for the
+  normal RC display, unrelated to the trigger.)
+- `src/FlightDisplay/PayloadDropWidget.qml` — `rcTriggerChannel: 9 → 13` (drives the on-screen
+  "RC13: … µs (high|low)" readout via `root.rcTriggerChannel`; no "9" is hardcoded to the user) + header
+  comment.
+- `src/FlightDisplay/FlyViewTopRightColumnLayout.qml` — descriptive trigger comment Ch9 → Ch13.
+
+**Why nothing else changed:** `PayloadDropWorker` decides visibility purely by comparing the delivered
+PWM to its 1500µs threshold (`_rc9ShowThresholdUs`) — it holds no channel index. `Vehicle::rc9TriggerChanged(int)`
+just carries that PWM. So switching the source channel = switching one array index. The `rc9*` identifiers
+are legacy names kept as-is (rename = pure churn). **Verified there is no other code path that reads
+Channel 9 as a trigger.**
+
+**Validation (desktop `-Werror`, Qt 6.8.3):** ✅ incremental build clean — `Vehicle.cc.o` recompiled, both
+QML caches regenerated, executable linked.
+
+**Rebuilt artifacts:**
+- **APK** — `/root/QGroundControl.apk`, **82 MB** (85,682,363 B), versionName **5.0.8**, arm64-v8a, minSdk 29,
+  Release, **APK Signature Scheme v3 verified**, `application-label='QGroundControl'`. Built via
+  `SKIP_TOOLCHAIN=1 ./build_android.sh`. Verified in `libQGroundControl_arm64-v8a.so`: **Ch13** trigger
+  strings present, **Ch9** trigger strings absent, **0 "Daily"** literals.
+- **Windows `.exe`** — `/root/QGroundControl-installer.exe`, **162,822,828 B**, PE32 / NSIS (`7z t` OK, 1899
+  files), sha256 `df9e2654…`. Built by GitHub Actions `build-windows-exe.yml` run
+  [`28147367727`](https://github.com/shreedatta1503-cloud/scand80gui/actions/runs/28147367727) (success,
+  `head_sha 8b81b71dd`). Verified in the bundled `bin/QGroundControl.exe`: **Ch13** strings present, **Ch9**
+  strings absent, **0 "Daily"**. Previous installer backed up to `QGroundControl-installer.exe.prev-pre-ch13`.
+  **Note:** this installer is larger than the prior 89 MB because the dispatch used the workflow's *default*
+  inputs (GStreamer video **ON**); earlier installers were dispatched with `video=OFF`. Re-dispatch with
+  `{"video":"OFF"}` for the smaller variant.
+
+**Behavioural guarantee:** Ch13 ≥1500µs reveals the widget; Channel 9 is no longer read by the trigger and
+can no longer activate it. Two-stage pin/drop flow, Nav Lights, and the SBUS filter are untouched. End-to-end
+click-testing still needs a real device/Windows host + ArduPilot SITL (neither artifact runs on this headless
+Linux box).
+
+### ✅ Done — STARTUP CRASH FIXED; app actually launches; BOTH artifacts rebuilt (2026-06-18, latest — commit `1d4e9477a`)
+
+**The shipped APK and `.exe` were segfaulting on startup — every build to date.** Once the desktop
+build was made to configure (below), launching it revealed `QQmlApplicationEngine failed to load
+component`: `MainWindow.qml` → `FlyView` → `FlyViewTopRightColumnLayout` → the custom widgets failed to
+resolve their types, leaving a **null root object** that `QGCApplication` dereferenced → **`Segmentation
+fault`**. The bug was invisible to every prior check because **`qmlcachegen` defers unresolved types to
+runtime** — the C++ symbols were present, the build was green, and the desktop build (the only runnable
+target here) had never configured, so **the app had literally never been run** (the "Runtime launch —
+not executed" note above).
+
+**Two custom‑code defects (both latent runtime errors, not build errors):**
+1. **Missing QML imports.** `src/FlightDisplay/NavigationLightsWidget.qml` and `PayloadDropWidget.qml`
+   use `QGCPalette` and `ScreenTools` but imported neither owning module → *"QGCPalette is not a type"*.
+   Fix: add `import QGroundControl.Palette` and `import QGroundControl.ScreenTools` (matching the sibling
+   `FlyViewTopRightColumnLayout.qml` and upstream widgets — the imports were dropped during the port).
+2. **`PayloadDropController` never registered.** It carried an active `QML_ELEMENT`, but it is compiled
+   into the **main app target** (`QmlControls/CMakeLists.txt` `target_sources(${CMAKE_PROJECT_NAME} …)`),
+   **not** into the `QGroundControl.Controls` QML module, so that module's `qmltyperegistrar` never saw
+   it → *"PayloadDropController is not a type"*. Fix: register it manually via
+   `qmlRegisterType<PayloadDropController>("QGroundControl.Controls", 1, 0, "PayloadDropController")` in
+   `QGroundControlQmlGlobal.cc` and comment out the dead `QML_ELEMENT` — exactly how every other
+   controller in that directory is handled (`TerrainProfile`, `ScreenToolsController`, …).
+
+**Plus the desktop‑build (validation‑only) blocker** in `src/VideoManager/VideoReceiver/GStreamer/gstqml6gl/CMakeLists.txt`
++ top‑level `CMakeLists.txt`: the GStreamer qt6 GL plugin's generated `RGBA.frag.qsb.external` is
+consumed by the top‑level `qt_add_resources`, but (a) its `QT_RESOURCE_ALIAS` was set only in the
+subdir scope (directory‑scoped property → invisible to the consumer → Qt rejects the absolute path) and
+(b) its `add_custom_command` had no consumer in its own directory → rule pruned ("no known rule to make
+it"). Fix: re‑assert the alias in the consuming scope + materialize the rule via a custom target. **Both
+guards are no‑ops for Android (GStreamer 1.22.12 ships no `RGBA_gles.frag`) and the video‑off Windows
+CI**, so no other artifact is affected.
+
+**Validation (the real one, at last):** native‑Linux Release build now configures, compiles `-Werror`,
+and **launches headless as `qgcuser` on `:99` to a healthy running Fly View** — **77 threads / 330 MB
+RSS**, the custom `NavigationLightsWidget` instantiated (`[NavLights] widget created` in the log), **zero
+"Type unavailable"/QML errors, no segfault**, stable‑branded (0 "Daily"). Since QML type registration +
+module imports are platform‑independent (same Qt 6.8.3), the APK and Windows app load the same tree.
+
+**Rebuilt artifacts (from `1d4e9477a`):**
+- **APK** — `/root/QGroundControl.apk`, 82 MB, versionName 5.0.8, arm64‑v8a, minSdk 29, Release, v3‑signed.
+  `SKIP_TOOLCHAIN=1 ./build_android.sh`; registration + import fixes verified in `libQGroundControl_arm64-v8a.so`.
+- **Windows `.exe`** — `/root/QGroundControl-installer.exe`, 89 MB, NSIS (`7z t` OK), bootstrap launcher +
+  `QGroundControlApp.exe`. CI `build-windows-exe.yml` run `27752654934` (`head_sha 1d4e9477a`, success,
+  Release/bootstrap=ON/video=OFF); `PayloadDropController` registration + 0 "Daily" verified in the app binary.
+- Old crashing artifacts backed up as `/root/QGroundControl{.apk,-installer.exe}.prev-crashing-7d134ff39`.
+- **Pushed** to `origin/upgrade/v5.0.8-stable` (fast‑forward `7d134ff39..1d4e9477a`).
+
+**Known boundary:** `PayloadDropController` is only *instantiated* when a vehicle connects (vehicle‑gated
+`Loader`); its type now *resolves* and the always‑visible `NavigationLightsWidget` fully instantiated,
+but exercising the live payload/nav‑light MAVLink flow + video still needs ArduPilot SITL + a display.
+
+### ✅ Done — pulled latest upstream **Stable_V5.0** patches (pre‑v5.0.9) + rebuilt BOTH artifacts (2026-06-18, later)
+
+"Latest version, **not** daily" resolved to upstream's **`Stable_V5.0` branch tip**, which sits **10 commits
+ahead of the `v5.0.8` tag** (the in‑progress v5.0.9 patch set — stable, not master/daily). The 6 scand80gui
+commits were **rebased in place** onto that tip (branch `upgrade/v5.0.8-stable`), so `git describe` advanced
+from `v5.0.8-6-gce449a2a3` → **`v5.0.8-16-g7d134ff39`**. This is also the **first time the `.exe` is on the
+v5.0.8 line** — the prior installer was still the pre‑v5.0.8 master‑based build from
+`feature/remove-applock-eventlog`.
+
+**Upstream stable fixes pulled in (10):** **MAVLink message‑bounds validation security fix**
+(`dbb6d598c`), GPS drivers pinned to a specific commit, video‑settings/UVC persistence fix, camera‑caps
+photo/video control fix, "standard modes: don't filter mode list", macOS continuity‑camera plist, Mac
+GStreamer bump, info‑box fix, daily‑link/doc updates.
+
+**Sole rebase conflict — `src/GPS/CMakeLists.txt`:** upstream now **pins PX4‑GPSDrivers itself** to
+`caf5158…` (its "GPS: Set Drivers to Specific Commit", 2025‑12‑17). That commit predates the 2026‑06
+`GPSDriverUBX` `Settings`‑arg change and is compatible with `GPSProvider.cc`'s 5‑arg call site, so the
+fork's earlier workaround pin (`0b96958`) is **superseded** — resolution defers to upstream's pin (with a
+provenance note kept in the file).
+
+**Rebuilt artifacts (this headless Linux box, 128‑core parallel):**
+- **APK** — `/root/QGroundControl.apk`, **82 MB** (85,682,363 B), **versionName 5.0.8**,
+  `application-label='QGroundControl'` (stable — **0 "Daily" literals** in `libQGroundControl_arm64-v8a.so`),
+  `org.mavlink.qgroundcontrol`, **arm64‑v8a, minSdk 29, Release, APK Signature Scheme v3 verified**. Built via
+  `SKIP_TOOLCHAIN=1 ./build_android.sh`. Log: `/root/qgc-apk-v5.0.9-rebuild.log`.
+- **Windows `.exe`** — `/root/QGroundControl-installer.exe`, **89 MB** (92,914,091 B), PE32 **Nullsoft
+  Installer v3.12**. Built by GitHub Actions `build-windows-exe.yml` on `upgrade/v5.0.8-stable` (run
+  `27748604589`, success ~28 min; inputs **Release / bootstrap=ON / video=OFF**, matching the prior installer).
+  Downsized from the old 103 MB master‑based build (Qt 6.8.3 + video‑off). Poll/swap log:
+  `/root/qgc-winexe-poll-v5.0.9.log`.
+
+**Branch pushed** to `origin` (`shreedatta1503-cloud/scand80gui`) via `--force-with-lease` (history rewrite
+from the rebase). **Safety backups:** tag `backup/pre-v5.0.9-rebase` + branch `backup/upgrade-v5.0.8-stable`
+(both `ce449a2a3`); old artifacts at `/root/QGroundControl.apk.prev-v5.0.8-old-tip-ce449a2a3` and
+`/root/QGroundControl-installer.exe.prev-20260618-pre-v5.0.9`.
+
+**Note:** the About/manifest version stays **5.0.8** — upstream has not yet cut a `v5.0.9` tag, and the
+version derives from `git describe --tags` (`cmake/Git.cmake`). The artifacts contain the v5.0.9‑bound
+stable patches regardless.
+
 ### ✅ Done — UPGRADED to official Stable QGroundControl v5.0.8 (2026-06-18)
 
 The fork was re‑based from upstream **master** (`v5.0.3-1040`, 2026‑05‑28 — which violated a "stable
@@ -310,10 +455,11 @@ a downloadable `QGroundControl-installer.exe` artifact, with `QGC_WINDOWS_BOOTST
   `/root/build_android.log`. Full C++ compiled warnings‑as‑errors; all custom QML passed `qmlcachegen`.
 - **Windows `.exe`** — **not built here** (no MSVC/NSIS on this Linux box). Config + the rewritten CI
   workflow are ready; run `build-windows-exe.yml` from the Actions tab to produce the signed installer.
-- **Runtime launch** — **not executed.** The APK/`.exe` can't run on this headless x86 Linux box, and a
-  native‑Linux validation build won't *configure* here due to a v5.0.8 + Qt‑6.8.3 + host‑GStreamer‑1.28.2
-  `qt_add_resources` quirk (absolute `.qsb` path) that is **unrelated to the migration** — a clean v5.0.8
-  checkout fails identically on this box. Validation therefore rests at the build/artifact level above.
+- **Runtime launch** — ⚠️ **superseded — see the "STARTUP CRASH FIXED" entry below.** The native‑Linux
+  validation build *does* now configure and launch (the `qt_add_resources` `.qsb` blocker was fixed in
+  commit `1d4e9477a`), and doing so revealed that the app had been **segfaulting on startup all along** —
+  the artifacts above were built green but never actually ran. The build/artifact‑level validation
+  described here was **necessary but not sufficient**; a real launch was needed and is now done.
 - **Not yet pushed / PR'd.** Branch `upgrade/v5.0.8-stable` is local for review.
 
 ### ✅ Done — fixed "QGroundControl Daily" branding → stable release branding (2026-06-18)
