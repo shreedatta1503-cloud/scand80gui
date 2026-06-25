@@ -49,7 +49,7 @@ ColumnLayout {
         Layout.alignment: Qt.AlignRight
     }
 
-    // Payload Drop widget. Self-managing: hidden until RC Channel 9 activity is detected,
+    // Payload Drop widget. Self-managing: hidden until RC Channel 13 activity is detected,
     // hides again after a successful drop. Loaded only when a vehicle is connected.
     Loader {
         id:                 payloadDropLoader

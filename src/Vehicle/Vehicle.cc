@@ -1513,21 +1513,21 @@ void Vehicle::_handleRCChannels(mavlink_message_t& message)
         }
     }
 
-    // ---- Payload Drop trigger: RC Channel 9 (index 8) ----
-    // Read Ch9 from the *raw* value (chan9_raw), not from the truncated pwmValues built above (which
-    // is -1 for any channel index >= chancount). The dedicated rc9TriggerChanged signal carries Ch9
-    // independently so PayloadDropWidget reveals reliably whenever Ch9 is actually present.
+    // ---- Payload Drop trigger: RC Channel 13 (index 12) ----
+    // Read Ch13 from the *raw* value (chan13_raw), not from the truncated pwmValues built above (which
+    // is -1 for any channel index >= chancount). The dedicated rc9TriggerChanged signal carries Ch13
+    // independently so PayloadDropWidget reveals reliably whenever Ch13 is actually present.
     //
     // Both transitions are also surfaced once via a user-visible app message: the console traces are
     // invisible in the in-app message panel. The most common real cause of "widget never appears" is a
-    // transmitter/receiver carrying <9 channels (Ch9 == UINT16_MAX).
-    const uint16_t rc9Raw = *_rgChannelvalues[8];
+    // transmitter/receiver carrying <13 channels (Ch13 == UINT16_MAX).
+    const uint16_t rc9Raw = *_rgChannelvalues[12];
     const bool rc9Present = (rc9Raw != UINT16_MAX);
     if (rc9Present) {
         const int rc9 = static_cast<int>(rc9Raw);
         if (rc9 != _lastRc9RawValue) {
             if (_lastRc9RawValue == -1) {
-                qgcApp()->showAppMessage(tr("Payload Drop: RC channel 9 detected (%1 us). Move Ch9 to reveal the widget.").arg(rc9));
+                qgcApp()->showAppMessage(tr("Payload Drop: RC channel 13 detected (%1 us). Move Ch13 to reveal the widget.").arg(rc9));
             }
             qCDebug(VehicleLog) << "RC9 (payload trigger) value changed:" << _lastRc9RawValue << "->" << rc9 << "us";
             _lastRc9RawValue = rc9;
@@ -1536,9 +1536,9 @@ void Vehicle::_handleRCChannels(mavlink_message_t& message)
         }
     } else if (!_rc9AbsentLogged) {
         qCDebug(VehicleLog) << "RC9 (payload trigger) absent from RC_CHANNELS; PayloadDropWidget will stay hidden";
-        qgcApp()->showAppMessage(tr("Payload Drop: RC channel 9 is not present in the RC stream, so the widget "
-                               "cannot appear. Ensure your transmitter/receiver sends at least 9 channels "
-                               "(e.g. SBUS 16-channel mode) and that Ch9 is assigned."));
+        qgcApp()->showAppMessage(tr("Payload Drop: RC channel 13 is not present in the RC stream, so the widget "
+                               "cannot appear. Ensure your transmitter/receiver sends at least 13 channels "
+                               "(e.g. SBUS 16-channel mode) and that Ch13 is assigned."));
         _rc9AbsentLogged = true;
         _lastRc9RawValue = -1;
         emit rc9TriggerChanged(-1);

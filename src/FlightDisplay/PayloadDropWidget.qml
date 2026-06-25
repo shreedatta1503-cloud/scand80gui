@@ -22,7 +22,7 @@ import QGroundControl.ScreenTools
 // authoritative workflow state on a dedicated worker thread (RC9 monitoring, pin/drop sequence,
 // AUX OUT 10 feedback), so this widget only *renders* that state and forwards button presses.
 //
-// Visibility is driven solely by RC Channel 9: high (2000us) shows the widget, low (1000us) hides
+// Visibility is driven solely by RC Channel 13: high (2000us) shows the widget, low (1000us) hides
 // it. Hiding is non-destructive — the controller keeps the full workflow state while hidden, so
 // when RC9 returns to 2000us the widget reappears exactly where it left off (pin/drop progress,
 // button colours, RC readout all preserved). There is no completion dialog; a successful DROP
@@ -45,8 +45,8 @@ Rectangle {
     border.color: qgcPal.text
 
     // ---- Configuration (display only; channel mapping lives in the controller) ----
-    property int    rcTriggerChannel:       9       // RC Channel that reveals the widget (display label)
-    property int    rcTriggerThresholdUs:   1500    // PWM above which Ch9 reads "high" (display label)
+    property int    rcTriggerChannel:       13      // RC Channel that reveals the widget (display label)
+    property int    rcTriggerThresholdUs:   1500    // PWM above which Ch13 reads "high" (display label)
 
     readonly property real _margin: ScreenTools.defaultFontPixelWidth
 
