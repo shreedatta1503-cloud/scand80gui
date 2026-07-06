@@ -21,8 +21,12 @@ import QGroundControl.ScreenTools
 // Always visible (never gated on vehicle state). Acts as both a status indicator and a
 // toggle for the navigation-lights output on AUX OUT 13 (ArduPilot SERVO13).
 //
-//   ON : AUX OUT 13 PWM == 1000us (low rail, light energised) -> dark-green button with a saffron border.
-//   OFF: AUX OUT 13 PWM == 2000us (high rail == idle/TRIM, light de-energised) -> translucent grey button.
+//   ON : AUX OUT 13 PWM == 750us (solid-on rail, light energised) -> dark-green button with a saffron border.
+//   OFF: AUX OUT 13 PWM == 2100us (high rail == idle/TRIM, light de-energised) -> translucent grey button.
+//
+// The ON/OFF microsecond values MUST match what the physical light module expects for SOLID output.
+// This module (per Mission Planner ch13out) uses 750us = solid-on, 2100us = off. Sending an
+// intermediate value such as 1000us lands in the module's *blink* band, so keep these literal.
 //
 // The output is ACTIVE-LOW: the channel idles HIGH (SERVO13_TRIM ~2200us = OFF) and is pulled LOW to
 // turn the lights ON. OFF is commanded on the SAME (high) rail as the idle/TRIM state, so a disarm,
@@ -49,8 +53,8 @@ Rectangle {
 
     // ---- Configuration (channels are 1-based; ArduPilot AUX OUT n == SERVOn) ----
     property int navServo:      13      // AUX OUT 13 navigation-lights channel
-    property int onPwmUs:       1000    // Commanded/observed ON PWM (active-low: low rail energises the light)
-    property int offPwmUs:      2000    // Commanded/observed OFF PWM (high rail == idle/TRIM, light off)
+    property int onPwmUs:       750     // Commanded/observed ON PWM (solid-on rail; 1000us = module blink band, avoid)
+    property int offPwmUs:      2100    // Commanded/observed OFF PWM (high rail == idle/TRIM, light off)
     property int onThresholdUs: 1500    // PWM at/below which the lights are considered ON (active-low)
     property int confirmToleranceUs: 100 // |observed - target| within which a toggle is "confirmed"
     property int commandTimeoutMs:   3000 // Re-enable the button if no confirmation arrives

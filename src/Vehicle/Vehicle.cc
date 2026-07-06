@@ -4062,7 +4062,7 @@ void Vehicle::sendNavigationLights(int pwmUs)
     // The widget is the single source of truth for the rail values and passes the literal target
     // microseconds; we only validate the range here (DO_SET_SERVO writes the literal pulse width).
     const int channel  = 13;        // AUX OUT 13 == SERVO13
-    const int kMinPwmUs = 800;
+    const int kMinPwmUs = 700;      // Solid-on rail is 750us on this light module; floor must stay below it
     const int kMaxPwmUs = 2200;
 
     const int clamped = qBound(kMinPwmUs, pwmUs, kMaxPwmUs);
