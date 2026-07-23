@@ -4041,7 +4041,7 @@ void Vehicle::sendPayloadDrop()
     // AUX OUT 11 drives the payload-release servo.
     static constexpr float kReleaseServo = 11.0f;   // AUX OUT 11
     static constexpr float kReleasePwmUs = 2000.0f; // Drive servo to the release position
-    static constexpr int   kResetDelayMs = 1500;    // dwell before returning the channels to MIN
+    static constexpr int   kResetDelayMs = 5000;    // dwell before returning the channels to MIN (5 s)
 
     sendMavCommand(
             _defaultComponentId,
