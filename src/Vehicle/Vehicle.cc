@@ -4041,6 +4041,7 @@ void Vehicle::sendPayloadDrop()
     // AUX OUT 11 drives the payload-release servo.
     static constexpr float kReleaseServo = 11.0f;   // AUX OUT 11
     static constexpr float kReleasePwmUs = 2000.0f; // Drive servo to the release position
+    static constexpr int   kResetDelayMs = 1500;    // dwell before returning the channels to MIN
 
     sendMavCommand(
             _defaultComponentId,
@@ -4048,6 +4049,36 @@ void Vehicle::sendPayloadDrop()
             true,                   // Show errors
             kReleaseServo,          // Param1: Servo instance (AUX OUT 11)
             kReleasePwmUs);         // Param2: PWM (us)
+
+    // Once the release has had time to actuate, return the payload channels to their SERVOx_MIN so
+    // the servos do not stay energised at 2000us for the rest of the flight (see helper).
+    _schedulePayloadServoReset(kResetDelayMs);
+}
+
+void Vehicle::_schedulePayloadServoReset(int delayMs)
+{
+    // DO_SET_SERVO installs a *persistent* override, so after a drop AUX OUT 9 (pin actuator) and 11
+    // (release servo) stay latched at 2000us. Re-command each to its SERVOx_MIN once the mechanism has
+    // completed the release. sendMavCommandDelayed defers the command by the dwell; on ArduPilot
+    // AUX OUT n == SERVOn. Both channels are SERVOx_FUNCTION=0 (Disabled) already (the drop's override
+    // relies on that), so the min override latches the same way the release override did.
+    static constexpr int kPayloadServos[] = { 9, 11 };
+    for (const int servo : kPayloadServos) {
+        int minPwm = 1000;  // safe fallback if the parameter is unavailable
+        const QString minParam = QStringLiteral("SERVO%1_MIN").arg(servo);
+        if (_parameterManager && _parameterManager->parametersReady() &&
+            _parameterManager->parameterExists(ParameterManager::defaultComponentId, minParam)) {
+            minPwm = _parameterManager->getParameter(ParameterManager::defaultComponentId, minParam)
+                         ->rawValue().toInt();
+        }
+        sendMavCommandDelayed(
+                _defaultComponentId,
+                MAV_CMD_DO_SET_SERVO,
+                false,                          // log failures; do not pop a dialog mid-flight
+                delayMs,                        // fire after the release has actuated
+                static_cast<float>(servo),      // Param1: servo instance
+                static_cast<float>(minPwm));    // Param2: PWM (us)
+    }
 }
 
 void Vehicle::sendNavigationLights(int pwmUs)

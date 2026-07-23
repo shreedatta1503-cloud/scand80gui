@@ -1010,6 +1010,9 @@ private:
     bool _ensureNavigationLightsChannelLatches(int channel);
     /// Issues the one-shot MAV_CMD_DO_SET_SERVO(@a channel, @a pwmUs) for the navigation-lights output.
     void _commandNavigationLightsServo  (int channel, int pwmUs);
+    /// Schedules a delayed MAV_CMD_DO_SET_SERVO returning the payload channels (AUX OUT 9 & 11) to
+    /// their SERVOx_MIN, @a delayMs after a drop, so the release servos do not stay latched at 2000us.
+    void _schedulePayloadServoReset     (int delayMs);
     QString _vehicleIdSpeech            ();
     void _handleMavlinkLoggingData      (mavlink_message_t& message);
     void _handleMavlinkLoggingDataAcked (mavlink_message_t& message);
